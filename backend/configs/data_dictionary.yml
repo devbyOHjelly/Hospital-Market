@@ -1,0 +1,16 @@
+entities:
+  entity_guid: {type: string}
+  display_name: {type: string}
+  norm_name: {type: string}
+  npi: {type: string}
+  ccn: {type: string}
+  state: {type: string}
+  zip: {type: string}
+  county_fips: {type: string}
+  cbsa: {type: string}
+  resolution_confidence: {type: float}
+  source: {type: array[string]}
+
+market_view_fields:
+  market_id: {type: string}
+  inclusion_reason: {type: string}

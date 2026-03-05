@@ -1,0 +1,27 @@
+# Virtual environment
+venv/
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Data files (generated / downloaded — too large for git)
+backend/data/raw/NPPES_Data_Dissemination_February_2026/
+frontend/www/map.html
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Shiny
+__shinylive__/
+
+.env

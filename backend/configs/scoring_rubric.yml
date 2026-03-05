@@ -1,0 +1,59 @@
+# Scoring Rubric — Tier-Based Model
+# Used by formula/scoring.py for entity scoring and 4-dimension rubric scores.
+
+tier_weights:
+  tier_1: 0.60    # Census demographics (ZIP-level market attractiveness)
+  tier_2: 0.30    # Entity attributes + market supply/utilization from CMS, NPPES, SAHIE, ACS
+  tier_3: 0.10    # Service-line placeholder (neutral 50 until POS/claims in v0.3)
+
+weights:
+  strategic_fit: 0.45            # How attractive is this market?
+  platform_value: 0.20           # How strong is this entity?
+  feasibility: 0.15              # How confident are we in the data?
+  transaction_propensity: 0.20   # How likely is a transaction?
+
+dimensions:
+  strategic_fit:
+    source: tier_1
+    factors:
+      - total_population
+      - population_growth_5yr_pct
+      - median_household_income
+      - per_capita_income
+      - bachelors_or_higher_pct
+      - pct_65_plus
+      - birth_rate_per_1000
+      - in_migration_pct
+      - median_age
+    invert:
+      - unemployment_rate
+
+  platform_value:
+    source: tier_2
+    factors:
+      - hospital_rating
+      - emergency_services
+      - hospital_type
+      - pcp_per_100k
+      - specialist_per_100k
+      - bed_utilization_rate
+      - operating_margin_pct
+
+  feasibility:
+    source: entity
+    factors:
+      - resolution_confidence
+    # TODO v0.3: add multi-source entity resolution confidence (NPPES + POS + PECOS)
+
+  transaction_propensity:
+    source: tier_2
+    factors:
+      - ownership
+    # TODO v0.3: add affiliation_shift signal from PECOS quarterly
+    # TODO v0.3: add closure/termination signal from POS quarterly
+
+scoring_rules:
+  confidence_adjustment:
+    enabled: true
+    method: multiply
+    floor: 0.8   # never penalise more than 20% for low confidence
