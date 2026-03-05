@@ -482,6 +482,244 @@ button[data-testid="collapsedControl"] { display:none !important; }
     font-weight: 500 !important;
 }
 
+/* Settings weights */
+.settings-shell {
+    padding: 14px 12px 12px 14px;
+    margin: 8px;
+    background: #ffffff;
+    border: 1px solid #ffe0b2;
+    border-radius: 10px;
+    max-height: calc(100vh - 96px);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow: hidden;
+}
+.settings-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.settings-title {
+    font-size: 0.98rem;
+    font-weight: 700;
+    color: #1a1a1a;
+    margin: 0;
+    padding: 0 0 2px;
+}
+.settings-head .btn {
+    background: #ff7f00 !important;
+    border: 1px solid #ff7f00 !important;
+    color: #fff !important;
+    font-size: 0.7rem !important;
+    padding: 4px 9px !important;
+    border-radius: 6px !important;
+}
+.settings-note {
+    font-size: 0.67rem;
+    color: #1a1a1a;
+    background: #fff8f0;
+    border: 1px solid #ffe0b2;
+    border-radius: 8px;
+    padding: 6px 8px;
+    line-height: 1.35;
+}
+.settings-weight-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+}
+.settings-dim-card {
+    border: 1px solid #ffe0b2;
+    border-radius: 8px;
+    background: #fff;
+    padding: 8px;
+}
+.settings-dim-card .shiny-input-container {
+    margin-bottom: 2px !important;
+}
+.settings-dim-card .form-label {
+    font-size: 0.72rem !important;
+    color: #1a1a1a !important;
+    font-weight: 600 !important;
+}
+.settings-dim-dropdown {
+    margin-top: 6px;
+    border-top: 1px solid #ffe0b2;
+    padding-top: 6px;
+}
+.settings-dim-dropdown > summary {
+    cursor: pointer;
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: #1a1a1a;
+    list-style: none;
+}
+.settings-dim-dropdown > summary::-webkit-details-marker {
+    display: none;
+}
+.settings-dim-dropdown > summary::before {
+    content: '\\25B6';
+    font-size: 0.5rem;
+    margin-right: 8px;
+    color: #1a1a1a;
+    display: inline-block;
+    transition: transform 0.15s;
+}
+.settings-dim-dropdown[open] > summary::before {
+    transform: rotate(90deg);
+}
+.settings-indicator-grid {
+    margin-top: 6px;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 4px;
+    max-height: 280px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+.settings-indicator-grid .shiny-input-container {
+    margin: 0 !important;
+}
+.settings-indicator-grid .form-label {
+    font-size: 0.64rem !important;
+    color: #1a1a1a !important;
+    font-weight: 500 !important;
+    margin-bottom: 2px !important;
+}
+.settings-indicator-grid input[type="range"] {
+    accent-color: #ff7f00;
+}
+
+/* myAgent */
+.agent-shell {
+    padding: 14px 12px 12px 14px;
+    margin: 8px;
+    background: #ffffff;
+    border: 1px solid #ffe0b2;
+    border-radius: 10px;
+    max-height: calc(100vh - 96px);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow: hidden;
+}
+.agent-title {
+    font-size: 0.98rem;
+    font-weight: 700;
+    color: #1a1a1a;
+    margin: 0;
+    padding: 0 0 2px;
+}
+.agent-config {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+}
+.agent-config .shiny-input-container {
+    margin-bottom: 2px !important;
+}
+.agent-config .form-label {
+    font-size: 0.72rem !important;
+    color: #1a1a1a !important;
+    font-weight: 600 !important;
+}
+.agent-config .form-control {
+    font-size: 0.74rem !important;
+    padding: 5px 8px !important;
+    border: 1px solid #ffe0b2 !important;
+    border-radius: 6px !important;
+    background: #fff !important;
+    color: #1a1a1a !important;
+}
+.agent-context {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    font-size: 0.66rem;
+    color: #1a1a1a;
+}
+.agent-context span {
+    background: #ffffff;
+    border: 1px solid #ffe0b2;
+    border-radius: 999px;
+    padding: 2px 8px;
+}
+.agent-thread-wrap {
+    background: #fff;
+    border: 1px solid #ffe0b2;
+    border-radius: 8px;
+    min-height: 290px;
+    max-height: calc(100vh - 270px);
+    flex: 1;
+    min-width: 0;
+    overflow-y: auto;
+    padding: 10px;
+}
+.agent-thread {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.agent-msg {
+    max-width: 88%;
+    border-radius: 10px;
+    padding: 6px 8px;
+    border: 1px solid #ffe0b2;
+}
+.agent-msg-user {
+    align-self: flex-end;
+    background: #fff3df;
+}
+.agent-msg-assistant {
+    align-self: flex-start;
+    background: #ffffff;
+}
+.agent-msg-label {
+    font-size: 0.62rem;
+    font-weight: 700;
+    color: #ff7f00;
+    margin-bottom: 2px;
+    letter-spacing: 0.02em;
+}
+.agent-msg-text {
+    font-size: 0.72rem;
+    color: #1a1a1a;
+    line-height: 1.35;
+}
+.agent-compose {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 6px;
+    align-items: center;
+    margin-top: 2px;
+}
+.agent-compose .shiny-input-container {
+    margin: 0 !important;
+}
+.agent-compose .form-control {
+    font-size: 0.74rem !important;
+    padding: 5px 8px !important;
+    border: 1px solid #ffe0b2 !important;
+    border-radius: 6px !important;
+    background: #fff !important;
+    color: #1a1a1a !important;
+}
+.agent-compose .btn {
+    background: #ff7f00 !important;
+    border: 1px solid #ff7f00 !important;
+    color: #fff !important;
+    font-size: 0.72rem !important;
+    padding: 5px 10px !important;
+    border-radius: 6px !important;
+}
+.agent-compose #agent_clear {
+    background: #fff !important;
+    border: 1px solid #ffe0b2 !important;
+    color: #1a1a1a !important;
+}
+
 /* Ranks section */
 .ranks-section {
     padding: 16px 0 0;

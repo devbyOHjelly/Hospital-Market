@@ -20,6 +20,126 @@ _STATE_TO_ABBR = {
     "Alabama": "AL", "Florida": "FL", "Georgia": "GA",
 }
 
+_DIMENSION_META = [
+    ("attractiveness", "Market Attractiveness"),
+    ("ability_to_win", "Ability to Succeed"),
+    ("ripeness", "Ripeness"),
+    ("economic_significance", "Economic Significance"),
+]
+
+_TIER1_NUMERIC_INDICATORS = [
+    "total_population", "population_growth_rate_2yr", "net_population_change_2yr",
+    "population_growth_5yr_pct", "age_0_17", "age_18_44", "age_45_64", "age_65_plus",
+    "age_0_17_pct", "age_18_44_pct", "age_45_64_pct", "age_65_plus_pct", "median_age",
+    "white_alone", "black_alone", "asian_alone", "hispanic_latino", "white_pct",
+    "black_pct", "asian_pct", "hispanic_pct", "pct_white", "pct_black", "pct_asian",
+    "pct_hispanic", "median_household_income", "bachelors_or_higher",
+    "bachelors_or_higher_pct", "birth_rate_per_1000", "in_migration_from_other_state",
+    "in_migration_rate", "in_migration_pct", "unemployed", "unemployment_rate",
+    "per_capita_income", "per_capita_income_growth_2yr", "top_industry_employment",
+    "industry_agriculture", "industry_construction", "industry_manufacturing",
+    "industry_retail", "industry_finance", "industry_professional_tech",
+    "industry_education_and_health", "industry_arts_entertainment",
+    "industry_other_services", "industry_public_administration",
+    "county_level_gdp_thousands", "county_level_gdp_growth_5yr",
+    "msa_level_gdp_millions", "msa_gdp_growth_5yr", "pct_under_18",
+    "pct_18_44", "pct_45_64", "pct_18_64", "pct_65_plus",
+]
+
+_DIMENSION_RULES = {
+    "attractiveness": {
+        "keywords": ("growth", "income", "migration", "gdp", "birth", "unemploy"),
+        "invert_keywords": ("unemploy",),
+    },
+    "ability_to_win": {
+        "keywords": ("industry", "employment", "18_44", "45_64", "18_64", "bachelors"),
+        "invert_keywords": (),
+    },
+    "ripeness": {
+        "keywords": ("65_plus", "median_age", "hispanic", "black", "asian", "white", "pct_"),
+        "invert_keywords": (),
+    },
+    "economic_significance": {
+        "keywords": ("total_population", "gdp", "income", "count", "age_"),
+        "invert_keywords": (),
+    },
+}
+
+
+def _pretty_indicator_name(ind: str) -> str:
+    return ind.replace("_", " ").title()
+
+
+def _dim_weight_id(dim: str) -> str:
+    return f"w_dim_{dim}"
+
+
+def _ind_weight_id(ind: str) -> str:
+    return f"w_ind_{ind}"
+
+
+def _build_dimension_indicator_config():
+    dim_map = {k: [] for k, _ in _DIMENSION_META}
+    inverted = set()
+    auto_to_attr = []
+    for col in _TIER1_NUMERIC_INDICATORS:
+        col_l = col.lower()
+        best_dim = None
+        best_score = 0
+        for dim, cfg in _DIMENSION_RULES.items():
+            score = sum(1 for kw in cfg["keywords"] if kw in col_l)
+            if score > best_score:
+                best_score = score
+                best_dim = dim
+        if not best_dim or best_score == 0:
+            best_dim = "attractiveness"
+            auto_to_attr.append(col)
+        dim_map[best_dim].append(col)
+        if any(kw in col_l for kw in _DIMENSION_RULES[best_dim]["invert_keywords"]):
+            inverted.add(col)
+    return dim_map, inverted, auto_to_attr
+
+
+_DIMENSION_INDICATORS, _INVERTED_INDICATORS, _AUTO_TO_ATTR = _build_dimension_indicator_config()
+
+
+def _settings_weights_panel():
+    dim_blocks = []
+    for dim, title in _DIMENSION_META:
+        indicators = _DIMENSION_INDICATORS.get(dim, [])
+        ind_sliders = [
+            ui.input_slider(
+                _ind_weight_id(ind),
+                _pretty_indicator_name(ind),
+                min=0,
+                max=200,
+                value=100,
+                step=5,
+            )
+            for ind in indicators
+        ]
+        dim_blocks.append(
+            ui.div(
+                ui.input_slider(_dim_weight_id(dim), f"{title} weight", 0, 100, 25, step=1),
+                ui.tags.details(
+                    ui.tags.summary(f"{title} indicators ({len(indicators)})"),
+                    ui.div(*ind_sliders, class_="settings-indicator-grid"),
+                    class_="settings-dim-dropdown",
+                ),
+                class_="settings-dim-card",
+            )
+        )
+    return ui.div(
+        ui.div(
+            ui.div("Framework Weights", class_="settings-title"),
+            ui.input_action_button("settings_reset_weights", "Reset Defaults"),
+            class_="settings-head",
+        ),
+        ui.output_ui("settings_assignment_note"),
+        ui.div(*dim_blocks, class_="settings-weight-grid"),
+        class_="settings-shell",
+    )
+
 # UI
 app_ui = ui.page_sidebar(
     ui.sidebar(
@@ -61,10 +181,52 @@ app_ui = ui.page_sidebar(
                     class_="market-section",
                 ),
             ),
+            # myAgent tab
+            ui.nav_panel(
+                "myAgent",
+                ui.div(
+                    ui.div(
+                        ui.div("Beflort", class_="agent-title"),
+                        ui.div(
+                            ui.input_text(
+                                "agent_endpoint",
+                                "Agent Endpoint",
+                                value="",
+                                placeholder="https://your-agent-service/chat",
+                            ),
+                            ui.input_text(
+                                "agent_api_key",
+                                "API Key",
+                                value="",
+                                placeholder="paste your API key",
+                            ),
+                            class_="agent-config",
+                        ),
+                        ui.output_ui("agent_context_bar"),
+                        ui.div(ui.output_ui("agent_thread"), class_="agent-thread-wrap"),
+                        ui.div(
+                            ui.input_text(
+                                "agent_message",
+                                None,
+                                value="",
+                                placeholder="Ask Beflort about this market...",
+                            ),
+                            ui.input_action_button("agent_send", "Send"),
+                            ui.input_action_button("agent_clear", "Clear"),
+                            class_="agent-compose",
+                        ),
+                        class_="agent-shell",
+                    ),
+                    class_="settings-section",
+                ),
+            ),
             # Settings tab
             ui.nav_panel(
                 "Settings",
-                ui.div(class_="settings-section"),
+                ui.div(
+                    _settings_weights_panel(),
+                    class_="settings-section",
+                ),
             ),
             id="sidebar_tabs",
         ),
@@ -98,6 +260,12 @@ def server(input, output, session):
     skip_reset = reactive.value(False)
     focus_zip = reactive.value(None)
     map_version = reactive.value(0)
+    agent_messages = reactive.value([
+        {
+            "role": "assistant",
+            "text": "Beflort is ready. Add your API call logic and start chatting.",
+        }
+    ])
 
     @reactive.calc
     def r_gdf():
@@ -254,94 +422,49 @@ def server(input, output, session):
                 out = 100.0 - out
             return out
 
-        # Use all Tier 1 numeric fields and map each into one of 4 framework dimensions.
-        tier1_numeric_fields = [
-            "total_population", "population_growth_rate_2yr", "net_population_change_2yr",
-            "population_growth_5yr_pct", "age_0_17", "age_18_44", "age_45_64", "age_65_plus",
-            "age_0_17_pct", "age_18_44_pct", "age_45_64_pct", "age_65_plus_pct", "median_age",
-            "white_alone", "black_alone", "asian_alone", "hispanic_latino", "white_pct",
-            "black_pct", "asian_pct", "hispanic_pct", "pct_white", "pct_black", "pct_asian",
-            "pct_hispanic", "median_household_income", "bachelors_or_higher",
-            "bachelors_or_higher_pct", "birth_rate_per_1000", "in_migration_from_other_state",
-            "in_migration_rate", "in_migration_pct", "unemployed", "unemployment_rate",
-            "per_capita_income", "per_capita_income_growth_2yr", "top_industry_employment",
-            "industry_agriculture", "industry_construction", "industry_manufacturing",
-            "industry_retail", "industry_finance", "industry_professional_tech",
-            "industry_education_and_health", "industry_arts_entertainment",
-            "industry_other_services", "industry_public_administration",
-            "county_level_gdp_thousands", "county_level_gdp_growth_5yr",
-            "msa_level_gdp_millions", "msa_gdp_growth_5yr", "pct_under_18",
-            "pct_18_44", "pct_45_64", "pct_18_64", "pct_65_plus",
-        ]
-        available_tier1 = [c for c in tier1_numeric_fields if c in data.columns]
+        def _slider_val(input_id: str, default: float) -> float:
+            try:
+                v = getattr(input, input_id)()
+                return default if v is None else float(v)
+            except Exception:
+                return default
 
-        dim_rules = {
-            "attractiveness": {
-                "keywords": (
-                    "growth", "income", "migration", "bachelors", "gdp", "birth", "unemploy"
-                ),
-                "invert_keywords": ("unemploy",),
-            },
-            "ability_to_win": {
-                "keywords": (
-                    "industry", "employment", "18_44", "45_64", "18_64", "bachelors", "working"
-                ),
-                "invert_keywords": (),
-            },
-            "ripeness": {
-                "keywords": (
-                    "65_plus", "median_age", "hispanic", "black", "asian", "white", "pct_"
-                ),
-                "invert_keywords": (),
-            },
-            "economic_significance": {
-                "keywords": (
-                    "total_population", "gdp", "employment", "count", "income", "age_"
-                ),
-                "invert_keywords": (),
-            },
-        }
-
-        dim_cols = {k: [] for k in dim_rules}
-        leftovers = []
-        for col in available_tier1:
-            col_l = col.lower()
-            best_dim = None
-            best_score = 0
-            for dim, cfg in dim_rules.items():
-                score = sum(1 for kw in cfg["keywords"] if kw in col_l)
-                if score > best_score:
-                    best_score = score
-                    best_dim = dim
-            if best_dim and best_score > 0:
-                invert = any(kw in col_l for kw in dim_rules[best_dim]["invert_keywords"])
-                dim_cols[best_dim].append((col, invert))
-            else:
-                leftovers.append(col)
-
-        # Ensure every Tier 1 numeric field contributes to some dimension.
-        dim_cycle = list(dim_cols.keys())
-        for idx, col in enumerate(leftovers):
-            dim_cols[dim_cycle[idx % len(dim_cycle)]].append((col, False))
-
-        def _compose(cols):
-            parts = []
-            for col, invert in cols:
-                v = _norm(col, invert=invert)
-                if v is not None:
-                    parts.append(v)
-            return (sum(parts) / len(parts)) if parts else None
-
-        attr = _compose(dim_cols["attractiveness"])
-        win = _compose(dim_cols["ability_to_win"])
-        ripe = _compose(dim_cols["ripeness"])
-        econ = _compose(dim_cols["economic_significance"])
+        dim_series = {}
+        for dim, _ in _DIMENSION_META:
+            numer = None
+            denom = 0.0
+            for col in _DIMENSION_INDICATORS.get(dim, []):
+                if col not in data.columns:
+                    continue
+                v = _norm(col, invert=(col in _INVERTED_INDICATORS))
+                if v is None:
+                    continue
+                w = max(0.0, _slider_val(_ind_weight_id(col), 100.0))
+                if w <= 0:
+                    continue
+                numer = v * w if numer is None else numer + (v * w)
+                denom += w
+            dim_series[dim] = (numer / denom) if numer is not None and denom > 0 else None
 
         fallback = pd.to_numeric(data["hospital_potential"], errors="coerce").fillna(0)
-        data["attractiveness"] = attr if attr is not None else fallback
-        data["ability_to_win"] = win if win is not None else fallback
-        data["ripeness"] = ripe if ripe is not None else fallback
-        data["economic_significance"] = econ if econ is not None else fallback
+        data["attractiveness"] = dim_series["attractiveness"] if dim_series["attractiveness"] is not None else fallback
+        data["ability_to_win"] = dim_series["ability_to_win"] if dim_series["ability_to_win"] is not None else fallback
+        data["ripeness"] = dim_series["ripeness"] if dim_series["ripeness"] is not None else fallback
+        data["economic_significance"] = (
+            dim_series["economic_significance"] if dim_series["economic_significance"] is not None else fallback
+        )
+
+        # Apply dimension-level weighting (25 each keeps dimensions unchanged).
+        dim_weights = {
+            dim: max(0.0, _slider_val(_dim_weight_id(dim), 25.0))
+            for dim, _ in _DIMENSION_META
+        }
+        avg_w = (sum(dim_weights.values()) / len(_DIMENSION_META)) if _DIMENSION_META else 25.0
+        if avg_w <= 0:
+            avg_w = 25.0
+        for dim, _ in _DIMENSION_META:
+            factor = dim_weights[dim] / avg_w
+            data[dim] = (pd.to_numeric(data[dim], errors="coerce").fillna(0) * factor).clip(0, 100)
 
         w, h = 360, 268
         ml, mr, mt, mb = 44, 14, 16, 54
@@ -650,6 +773,93 @@ def server(input, output, session):
             if mask.any():
                 entities_for_zips = ENTITIES_DF[mask]
         return ui.HTML(market_tab_html(sel, entities_for_zips))
+
+    @reactive.effect
+    @reactive.event(input.agent_clear)
+    def _clear_agent_thread():
+        agent_messages.set([
+            {
+                "role": "assistant",
+                "text": "Thread cleared. Beflort is ready for a new conversation.",
+            }
+        ])
+
+    @reactive.effect
+    @reactive.event(input.agent_send)
+    def _agent_send():
+        msg = (input.agent_message() or "").strip()
+        if not msg:
+            return
+        history = list(agent_messages())
+        history.append({"role": "user", "text": msg})
+        state_val = input.state() or "N/A"
+        sel_count = len(selected_zips())
+        reply = (
+            "Beflort UI captured your message. Wire your API call in "
+            "`_agent_send()` to get live answers.\n"
+            f"Current context -> state: {state_val}, selected ZIPs: {sel_count}."
+        )
+        history.append({"role": "assistant", "text": reply})
+        agent_messages.set(history)
+        ui.update_text("agent_message", value="")
+
+    @render.ui
+    def agent_context_bar():
+        state_val = input.state() or "N/A"
+        rank_val = input.rank_filter() or state_val
+        query_val = (input.zip_search() or "").strip()
+        sel_count = len(selected_zips())
+        query_txt = query_val if query_val else "none"
+        endpoint_set = "yes" if (input.agent_endpoint() or "").strip() else "no"
+        key_set = "yes" if (input.agent_api_key() or "").strip() else "no"
+        return ui.HTML(
+            '<div class="agent-context">'
+            f'<span>State: <b>{html.escape(str(state_val))}</b></span>'
+            f'<span>Rank Filter: <b>{html.escape(str(rank_val))}</b></span>'
+            f'<span>Selected ZIPs: <b>{sel_count}</b></span>'
+            f'<span>Search: <b>{html.escape(query_txt)}</b></span>'
+            f'<span>Endpoint set: <b>{endpoint_set}</b></span>'
+            f'<span>API key set: <b>{key_set}</b></span>'
+            '</div>'
+        )
+
+    @render.ui
+    def agent_thread():
+        rows = []
+        for m in agent_messages():
+            role = str(m.get("role", "assistant"))
+            text = html.escape(str(m.get("text", ""))).replace("\n", "<br>")
+            bubble_cls = "agent-msg-user" if role == "user" else "agent-msg-assistant"
+            label = "You" if role == "user" else "Beflort"
+            rows.append(
+                f'<div class="agent-msg {bubble_cls}">'
+                f'<div class="agent-msg-label">{label}</div>'
+                f'<div class="agent-msg-text">{text}</div>'
+                '</div>'
+            )
+        return ui.HTML('<div class="agent-thread">' + "".join(rows) + "</div>")
+
+    @reactive.effect
+    @reactive.event(input.settings_reset_weights)
+    def _reset_settings_weights():
+        for dim, _ in _DIMENSION_META:
+            ui.update_slider(_dim_weight_id(dim), value=25)
+        for ind in _TIER1_NUMERIC_INDICATORS:
+            ui.update_slider(_ind_weight_id(ind), value=100)
+
+    @render.ui
+    def settings_assignment_note():
+        auto_count = len(_AUTO_TO_ATTR)
+        note = (
+            f"{auto_count} indicator(s) had no direct keyword match and were auto-assigned to "
+            "Market Attractiveness."
+        )
+        return ui.HTML(
+            '<div class="settings-note">'
+            '<b>Indicator assignment check:</b> all Tier 1 numeric indicators are assigned '
+            f"to one of the 4 dimensions. {html.escape(note)}"
+            '</div>'
+        )
 
     @render.ui
     def rank_count_title():

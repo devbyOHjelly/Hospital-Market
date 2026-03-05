@@ -8,14 +8,14 @@ from config import DATA_PATH, ENTITIES_PATH, BACKEND_DIR
 _DEFAULT_STATES = {"Florida", "Georgia", "Alabama"}
 
 
-def _auto_build_gpkg():
-    """Try to build the .gpkg from entities.parquet automatically (FL, GA, AL)."""
+def _auto_build_gpkg(empty_mode: bool = False):
+    """Try to build the .gpkg automatically (FL, GA, AL)."""
     sys.path.insert(0, BACKEND_DIR)
     try:
         from build_base_map import build as build_map_data
 
         print(f"  Auto-building base map for: {sorted(_DEFAULT_STATES)}")
-        build_map_data(state_filter=_DEFAULT_STATES)
+        build_map_data(state_filter=_DEFAULT_STATES, empty_mode=empty_mode)
     except Exception as e:
         raise FileNotFoundError(
             f"Base map not found at {DATA_PATH} and auto-build failed: {e}\n"
@@ -25,14 +25,13 @@ def _auto_build_gpkg():
 
 def load_data() -> gpd.GeoDataFrame:
     if not os.path.exists(DATA_PATH):
-        if os.path.exists(ENTITIES_PATH):
+        has_entities = os.path.exists(ENTITIES_PATH)
+        if has_entities:
             print("  .gpkg missing — auto-building from entities.parquet ...")
-            _auto_build_gpkg()
+            _auto_build_gpkg(empty_mode=False)
         else:
-            raise FileNotFoundError(
-                f"No data found. Run the pipeline first:\n"
-                f"  python backend/pipeline.py"
-            )
+            print("  .gpkg and entities.parquet missing — building map in empty mode ...")
+            _auto_build_gpkg(empty_mode=True)
     gdf = gpd.read_file(DATA_PATH)
     gdf = _merge_tier1_excels(gdf)
     gdf = _add_place_names(gdf)

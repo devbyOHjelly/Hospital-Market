@@ -227,12 +227,20 @@ def run_pipeline(states: list[str] | None = None) -> dict:
     if not cfg.get('outputs', {}).get('write_parquet', True):
         print('WARNING: outputs.write_parquet is false — dry run only')
 
-    # 1. Load & transform NPPES
+    # 1. Load & transform NPPES (optional fallback if raw file is missing)
     print('\n[1/8] Loading NPPES ...')
-    nppes_raw = _load_nppes_chunked(cfg, states)
-    nppes_entities = nppes_to_entities(nppes_raw)
-    del nppes_raw
-    print(f'  NPPES entities: {len(nppes_entities):,}')
+    nppes_entities = pd.DataFrame()
+    nppes_enabled = bool(cfg.get('sources', {}).get('nppes', {}).get('enabled', True))
+    if nppes_enabled:
+        try:
+            nppes_raw = _load_nppes_chunked(cfg, states)
+            nppes_entities = nppes_to_entities(nppes_raw)
+            del nppes_raw
+            print(f'  NPPES entities: {len(nppes_entities):,}')
+        except (FileNotFoundError, ValueError) as e:
+            print(f'  WARNING: NPPES unavailable — continuing without NPPES ({e})')
+    else:
+        print('  SKIP: NPPES disabled in config')
 
     # 2. Load & transform CMS hospitals
     print('\n[2/8] Loading CMS Hospital data ...')
