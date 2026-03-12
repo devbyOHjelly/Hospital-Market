@@ -13,9 +13,8 @@ _TIER1_PARQUET_PATH = os.path.join(
 
 def _auto_build_gpkg(empty_mode: bool = False):
     """Try to build the .gpkg automatically (FL, GA, AL)."""
-    sys.path.insert(0, BACKEND_DIR)
     try:
-        from build_base_map import build as build_map_data
+        from backend.modules.map.build_base_map import build as build_map_data
 
         print(f"  Auto-building base map for: {sorted(_DEFAULT_STATES)}")
         build_map_data(state_filter=_DEFAULT_STATES, empty_mode=empty_mode)

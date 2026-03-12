@@ -29,7 +29,7 @@ import pandas as pd
 import requests
 
 def _load_env():
-    env_path = Path(__file__).parent.parent / ".env"
+    env_path = Path(__file__).resolve().parents[3] / ".env"
     if env_path.exists():
         for line in env_path.read_text().splitlines():
             line = line.strip()

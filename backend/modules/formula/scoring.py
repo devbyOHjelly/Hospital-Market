@@ -83,7 +83,7 @@ def _load_rubric(cfg: dict) -> dict:
     rubric_path = cfg.get("processing", {}).get("scoring", {}).get("rubric_file", "")
     if not rubric_path:
         return {}
-    full = Path(__file__).parent.parent / rubric_path
+    full = Path(__file__).resolve().parents[2] / rubric_path
     if not full.exists():
         return {}
     with open(full, "r") as f:

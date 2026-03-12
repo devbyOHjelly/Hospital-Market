@@ -19,7 +19,8 @@ import pandas as pd
 import geopandas as gpd
 import requests
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+DATA_DIR = os.path.join(BACKEND_DIR, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 
 OUTPUT_PATH = os.path.join(DATA_DIR, "zcta_hospital_potential.gpkg")

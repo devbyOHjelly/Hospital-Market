@@ -29,16 +29,20 @@ import yaml
 import requests
 from io import StringIO
 
-from transform import nppes_to_entities, cms_hospitals_to_entities
-from resolve import resolve_entities, ResolutionConfig
-from market import (
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from backend.modules.processing.transform import nppes_to_entities, cms_hospitals_to_entities
+from backend.modules.processing.resolve import resolve_entities, ResolutionConfig
+from backend.modules.processing.market import (
     load_zip_county_crosswalk, apply_zip_to_county,
     load_cbsa_delineation, attach_cbsa, build_market_view,
 )
-from formula.scoring import score_entities, compute_rubric_scores
-from census import fetch_tier1_demographics
-from io_utils import find_latest
-from tier2 import build_tier2_demographics
+from backend.modules.formula.scoring import score_entities, compute_rubric_scores
+from backend.modules.ingest.census import fetch_tier1_demographics
+from backend.modules.ingest.io_utils import find_latest
+from backend.modules.ingest.tier2 import build_tier2_demographics
 
 DATA_DIR = Path(__file__).parent / 'data'
 RAW_DIR = DATA_DIR / 'raw'
@@ -389,7 +393,7 @@ def run_pipeline(states: list[str] | None = None) -> dict:
     # 8. Build base map (.gpkg)
     print('\n[8/8] Building base map ...')
     try:
-        from build_base_map import build as build_map_data, ABBR_TO_NAME
+        from backend.modules.map.build_base_map import build as build_map_data, ABBR_TO_NAME
         state_names = None
         if states:
             state_names = {ABBR_TO_NAME[s.upper()] for s in states
@@ -397,7 +401,7 @@ def run_pipeline(states: list[str] | None = None) -> dict:
         build_map_data(state_filter=state_names)
     except Exception as e:
         print(f'  WARNING: base map build failed — {e}')
-        print(f'  You can run it manually: python build_base_map.py --states ...')
+        print('  You can run it manually: python -m backend.modules.map.build_base_map --states ...')
 
     elapsed = time.time() - t0
     state_list = sorted(entities["state"].dropna().unique().tolist())

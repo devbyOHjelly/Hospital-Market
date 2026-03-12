@@ -1,12 +1,6 @@
-"""
-transform.py
-Convert raw NPPES and CMS Hospital data into a standardized entity schema.
-"""
-
 from __future__ import annotations
 import pandas as pd
-from utils import normalize_name, normalize_state, normalize_zip
-
+from backend.modules.shared.utils import normalize_name, normalize_state, normalize_zip
 
 NPPES_RENAME = {
     'NPI': 'npi',
@@ -19,7 +13,6 @@ NPPES_RENAME = {
     'Healthcare Provider Taxonomy Code_1': 'taxonomy_code',
     'Provider Business Practice Location Address City Name': 'city',
     'Provider Business Practice Location Address - Address Line 1': 'address',
-    # Short names from pipeline's auto-detection rename
     'entity_type': 'entity_type_code',
     'taxonomy': 'taxonomy_code',
 }
@@ -38,9 +31,7 @@ CMS_RENAME = {
     'County Name': 'county_name',
 }
 
-
 def nppes_to_entities(nppes_main: pd.DataFrame) -> pd.DataFrame:
-    """Convert NPPES main file rows to the standard entity schema."""
     df = nppes_main.copy()
     for k, v in NPPES_RENAME.items():
         if k in df.columns:
@@ -68,7 +59,6 @@ def nppes_to_entities(nppes_main: pd.DataFrame) -> pd.DataFrame:
 
 
 def cms_hospitals_to_entities(hosp_df: pd.DataFrame) -> pd.DataFrame:
-    """Convert CMS Hospital General Info rows to the standard entity schema."""
     df = hosp_df.copy()
     for k, v in CMS_RENAME.items():
         if k in df.columns:
