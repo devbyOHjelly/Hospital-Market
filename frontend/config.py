@@ -16,7 +16,7 @@ os.makedirs(WWW_DIR, exist_ok=True)
 
 # Color map
 COLORMAP = cm.LinearColormap(
-    colors=["#ffffff", "#fff0d4", "#ffd699", "#ffb84d", "#ff9b1a", "#ff7f00"],
+    colors=["#ffffff", "#fff0d4", "#ffd699", "#ffb84d", "#ff7f00", "#ff7f00"],
     vmin=0,
     vmax=100,
 )
@@ -38,7 +38,7 @@ os.makedirs(WWW_DIR, exist_ok=True)
 
 # Color map
 COLORMAP = cm.LinearColormap(
-    colors=["#ffffff", "#fff0d4", "#ffd699", "#ffb84d", "#ff9b1a", "#ff7f00"],
+    colors=["#ffffff", "#fff0d4", "#ffd699", "#ffb84d", "#ff7f00", "#ff7f00"],
     vmin=0,
     vmax=100,
 )

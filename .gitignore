@@ -11,7 +11,6 @@ build/
 
 # Data files (generated / downloaded — too large for git)
 backend/data/raw/NPPES_Data_Dissemination_February_2026/
-frontend/www/map.html
 
 # OS
 .DS_Store

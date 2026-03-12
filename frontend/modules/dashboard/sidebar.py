@@ -1,4 +1,6 @@
+import html
 import pandas as pd
+from config import COLORMAP
 
 MAX_SELECTED = 10
 
@@ -18,15 +20,12 @@ def map_chips_html(selected: list[dict], limit_msg: str = "") -> str:
         return ""
 
     count = len(selected)
-    counter_color = "#ff7f00" if count >= MAX_SELECTED else "#1a1a1a"
+    counter_color = "#ff7f00" if count >= MAX_SELECTED else "#ffffff"
 
     chips = ""
     for zd in selected:
         zc = zd.get("zipcode", "")
-        chips += (
-            f'<span class="map-chip">{zc}'
-            f'<span class="chip-remove" data-zip="{zc}">&times;</span></span>'
-        )
+        chips += f'<span class="map-chip">{zc}</span>'
 
     return (
         f'<div class="map-chips-bar">'
@@ -257,7 +256,7 @@ def _market_framework_html(selected: list[dict]) -> str:
     bg_rects = (
         f'<rect x="{ml:.1f}" y="{mt:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" fill="#ffd699"/>'
         f'<rect x="{ml+cell_w:.1f}" y="{mt:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" fill="#ffb84d"/>'
-        f'<rect x="{ml+2*cell_w:.1f}" y="{mt:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" fill="#ff9b1a"/>'
+        f'<rect x="{ml+2*cell_w:.1f}" y="{mt:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" fill="#ff7f00"/>'
         f'<rect x="{ml:.1f}" y="{mt+cell_h:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" fill="#fff0d4"/>'
         f'<rect x="{ml+cell_w:.1f}" y="{mt+cell_h:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" fill="#ffd699"/>'
         f'<rect x="{ml+2*cell_w:.1f}" y="{mt+cell_h:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" fill="#ffb84d"/>'
@@ -275,56 +274,37 @@ def _market_framework_html(selected: list[dict]) -> str:
     r = 5.5 + (max(0.0, min(100.0, econ)) / 100.0) * 12.5
     cx, cy = _x(ability), _y(attr)
 
-    def _lerp(a, b, t):
-        return int(round(a + (b - a) * t))
-
-    rscore = max(0.0, min(100.0, float(ripe)))
-    if rscore <= 50.0:
-        t = rscore / 50.0
-        r1 = _lerp(220, 245, t)
-        g1 = _lerp(38, 158, t)
-        b1 = _lerp(38, 11, t)
-        r2 = _lerp(153, 161, t)
-        g2 = _lerp(27, 98, t)
-        b2 = _lerp(27, 7, t)
-    else:
-        t = (rscore - 50.0) / 50.0
-        r1 = _lerp(245, 34, t)
-        g1 = _lerp(158, 197, t)
-        b1 = _lerp(11, 94, t)
-        r2 = _lerp(161, 21, t)
-        g2 = _lerp(98, 128, t)
-        b2 = _lerp(7, 61, t)
-
-    bubble_fill = f"rgba({r1},{g1},{b1},0.45)"
-    bubble_stroke = f"rgba({r2},{g2},{b2},0.95)"
+    # Link bubble color to computed construct formula so color changes with data.
+    formula_score = max(0.0, min(100.0, (attr + ability + ripe + econ) / 4.0))
+    bubble_fill = COLORMAP(formula_score)
+    bubble_stroke = "#000000"
 
     svg = (
         f'<svg viewBox="0 0 {w} {h}" width="100%" height="250" role="img" '
         f'aria-label="Framework chart">'
-        f'<rect x="0" y="0" width="{w}" height="{h}" fill="#ffffff"/>'
+        f'<rect x="0" y="0" width="{w}" height="{h}" fill="#000000"/>'
         + bg_rects
-        + f'<rect x="{ml}" y="{mt}" width="{pw:.1f}" height="{ph:.1f}" fill="none" stroke="#d1d5db" stroke-width="1"/>'
-        f'<line x1="{ml+pw/3:.1f}" y1="{mt}" x2="{ml+pw/3:.1f}" y2="{mt+ph}" stroke="#e5e7eb" stroke-width="1"/>'
-        f'<line x1="{ml+2*pw/3:.1f}" y1="{mt}" x2="{ml+2*pw/3:.1f}" y2="{mt+ph}" stroke="#e5e7eb" stroke-width="1"/>'
-        f'<line x1="{ml}" y1="{mt+ph/3:.1f}" x2="{ml+pw}" y2="{mt+ph/3:.1f}" stroke="#e5e7eb" stroke-width="1"/>'
-        f'<line x1="{ml}" y1="{mt+2*ph/3:.1f}" x2="{ml+pw}" y2="{mt+2*ph/3:.1f}" stroke="#e5e7eb" stroke-width="1"/>'
+        + f'<rect x="{ml}" y="{mt}" width="{pw:.1f}" height="{ph:.1f}" fill="none" stroke="#9ca3af" stroke-width="1"/>'
+        f'<line x1="{ml+pw/3:.1f}" y1="{mt}" x2="{ml+pw/3:.1f}" y2="{mt+ph}" stroke="#6b7280" stroke-width="1"/>'
+        f'<line x1="{ml+2*pw/3:.1f}" y1="{mt}" x2="{ml+2*pw/3:.1f}" y2="{mt+ph}" stroke="#6b7280" stroke-width="1"/>'
+        f'<line x1="{ml}" y1="{mt+ph/3:.1f}" x2="{ml+pw}" y2="{mt+ph/3:.1f}" stroke="#6b7280" stroke-width="1"/>'
+        f'<line x1="{ml}" y1="{mt+2*ph/3:.1f}" x2="{ml+pw}" y2="{mt+2*ph/3:.1f}" stroke="#6b7280" stroke-width="1"/>'
         f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r:.1f}" fill="{bubble_fill}" stroke="{bubble_stroke}" stroke-width="1.2"></circle>'
-        f'<text x="{ml+pw/2:.1f}" y="{h-8}" fill="#1a1a1a" font-size="10" font-weight="600" letter-spacing="0.03em" text-anchor="middle">ABILITY TO SUCCEED</text>'
-        f'<text x="0" y="{mt+ph/2:.1f}" fill="#1a1a1a" font-size="10" font-weight="600" letter-spacing="0.03em" text-anchor="middle" transform="rotate(-90 0 {mt+ph/2:.1f})">MARKET ATTRACTIVENESS</text>'
-        f'<text x="{ml}" y="{mt+ph+16}" fill="#1a1a1a" font-size="10" font-weight="600" letter-spacing="0.03em">LOW</text>'
-        f'<text x="{ml+pw/2:.1f}" y="{mt+ph+16}" fill="#1a1a1a" font-size="10" font-weight="600" letter-spacing="0.03em" text-anchor="middle">MED</text>'
-        f'<text x="{ml+pw}" y="{mt+ph+16}" fill="#1a1a1a" font-size="10" font-weight="600" letter-spacing="0.03em" text-anchor="end">HIGH</text>'
-        f'<text x="{ml-8}" y="{mt+ph}" fill="#1a1a1a" font-size="10" font-weight="600" letter-spacing="0.03em" text-anchor="end">LOW</text>'
-        f'<text x="{ml-8}" y="{mt+ph/2:.1f}" fill="#1a1a1a" font-size="10" font-weight="600" letter-spacing="0.03em" text-anchor="end">MED</text>'
-        f'<text x="{ml-8}" y="{mt+8}" fill="#1a1a1a" font-size="10" font-weight="600" letter-spacing="0.03em" text-anchor="end">HIGH</text>'
+        f'<text x="{ml+pw/2:.1f}" y="{h-8}" fill="#ffffff" font-size="10" font-weight="600" letter-spacing="0.03em" text-anchor="middle">ABILITY TO SUCCEED</text>'
+        f'<text x="0" y="{mt+ph/2:.1f}" fill="#ffffff" font-size="10" font-weight="600" letter-spacing="0.03em" text-anchor="middle" transform="rotate(-90 0 {mt+ph/2:.1f})">MARKET ATTRACTIVENESS</text>'
+        f'<text x="{ml}" y="{mt+ph+16}" fill="#ffffff" font-size="10" font-weight="600" letter-spacing="0.03em">LOW</text>'
+        f'<text x="{ml+pw/2:.1f}" y="{mt+ph+16}" fill="#ffffff" font-size="10" font-weight="600" letter-spacing="0.03em" text-anchor="middle">MED</text>'
+        f'<text x="{ml+pw}" y="{mt+ph+16}" fill="#ffffff" font-size="10" font-weight="600" letter-spacing="0.03em" text-anchor="end">HIGH</text>'
+        f'<text x="{ml-8}" y="{mt+ph}" fill="#ffffff" font-size="10" font-weight="600" letter-spacing="0.03em" text-anchor="end">LOW</text>'
+        f'<text x="{ml-8}" y="{mt+ph/2:.1f}" fill="#ffffff" font-size="10" font-weight="600" letter-spacing="0.03em" text-anchor="end">MED</text>'
+        f'<text x="{ml-8}" y="{mt+8}" fill="#ffffff" font-size="10" font-weight="600" letter-spacing="0.03em" text-anchor="end">HIGH</text>'
         "</svg>"
     )
 
     return (
-        '<div style="border:none;border-radius:6px;background:#fff;margin-bottom:10px;padding:8px 8px 6px;">'
-        '<div class="def-title" style="margin:-2px 0 8px -4px;text-align:left;">Market Projection</div>'
-        f"{svg}"
+        '<div style="border:none;border-radius:6px;background:#000;margin-bottom:10px;padding:8px 8px 6px;">'
+        '<div class="def-title market-projection-title" style="margin:-2px 0 8px -4px;text-align:left;">Market Projection</div>'
+        f'<div style="margin-top:40px;">{svg}</div>'
         "</div>"
     )
 
@@ -542,7 +522,7 @@ def market_tab_html(selected: list[dict], entities_df=None) -> str:
 
     scores = [float(z.get("hospital_potential", 0)) for z in selected]
     avg_score = sum(scores) / count
-    avg_color = "#ff7f00"
+    avg_color = COLORMAP(avg_score)
 
     total_ent = sum(int(z.get("entity_count", 0)) for z in selected)
     total_hosp = sum(int(z.get("hospital_count", 0)) for z in selected)
@@ -580,7 +560,7 @@ def market_tab_html(selected: list[dict], entities_df=None) -> str:
         f"{_market_framework_html(selected)}"
         f'<div style="text-align:center;padding:6px 10px;">'
         f'<div style="font-size:0.6rem;color:#1a1a1a;">Average Market Score</div>'
-        f'<div style="font-size:1.4rem;font-weight:800;color:{avg_color};line-height:1.2;">'
+        f'<div class="market-score-value" style="--ms-color:{avg_color};font-size:1.4rem;font-weight:800;line-height:1.2;">'
         f"{avg_score:.1f}</div>"
         f'<div style="font-size:0.6rem;color:#1a1a1a;">out of 100</div></div>'
         f'<div class="market-detail-content" style="border-top:none;">'
@@ -627,24 +607,55 @@ def market_tab_html(selected: list[dict], entities_df=None) -> str:
 
     from collections import Counter
 
+    _TIER1_ALIASES = {
+        "zip_code": ("zipcode", "zip"),
+        "county_flips": ("county_fips",),
+        "state_name": ("state", "state_abbr"),
+        "white_pct": ("pct_white",),
+        "black_pct": ("pct_black",),
+        "asian_pct": ("pct_asian",),
+        "hispanic_pct": ("pct_hispanic",),
+        "in_migration_rate": ("in_migration_pct",),
+        "in_migration_pct": ("in_migration_rate",),
+        "birth_rate_per_1000": ("birth_rate",),
+        "top_industry_employment": ("top_industry_employee_count",),
+    }
+
     def _tier1_get(row, key):
-        if key == "zip_code":
-            return row.get("zip_code") or row.get("zipcode")
-        if key == "county_flips":
-            return row.get("county_flips") or row.get("county_fips")
-        if key == "state_name":
-            return row.get("state_name") or row.get("state")
+        if key in row and row.get(key) not in (None, "", "nan", "None"):
+            return row.get(key)
+        for alt in _TIER1_ALIASES.get(key, ()):
+            if alt in row and row.get(alt) not in (None, "", "nan", "None"):
+                return row.get(alt)
+        # Fallback: normalized lookup by collapsing underscores/case.
+        nk = str(key).replace("_", "").lower()
+        for rk, rv in row.items():
+            if str(rk).replace("_", "").lower() == nk and rv not in (None, "", "nan", "None"):
+                return rv
         return row.get(key)
+
+    def _to_num(raw):
+        if raw is None:
+            return None
+        if isinstance(raw, (int, float)):
+            return float(raw)
+        s = str(raw).strip()
+        if not s or s.lower() in ("nan", "none", "null"):
+            return None
+        # normalize common formatted strings like "$35,575", "6.1%", "39/1,000"
+        s = s.replace("$", "").replace(",", "").replace("%", "")
+        s = s.replace("/1000", "").replace("/1,000", "")
+        try:
+            return float(s)
+        except (TypeError, ValueError):
+            return None
 
     def _avg_num(key):
         vals = []
         for z in selected:
-            try:
-                v = float(_tier1_get(z, key))
-                if v == v:
-                    vals.append(v)
-            except (TypeError, ValueError):
-                pass
+            v = _to_num(_tier1_get(z, key))
+            if v is not None and v == v:
+                vals.append(v)
         return (sum(vals) / len(vals)) if vals else None
 
     def _mode_str(key):
@@ -736,43 +747,108 @@ def market_tab_html(selected: list[dict], entities_df=None) -> str:
         ("MSA GDP Year", "msa_gdp_year", "int", "mode"),
     ]
 
-    tier1_rows = []
-    aggregate_excluded_keys = {
-        "zip_code",
-        "county_name",
-        "county_flips",
-        "state_fips",
-        "state_name",
-        "msa",
-        "msa_name",
-        "data_year",
-        "historical_year",
-        "gdp_year",
-        "msa_gdp_year",
-    }
-    for label, key, fmt, agg in tier1_specs:
-        if key in aggregate_excluded_keys:
-            continue
-        raw = _avg_num(key) if agg == "avg" else _mode_str(key)
-        tier1_rows.append((label, _fmt_t1(raw, fmt)))
-
-    tier2_factors = _build_tier2_rows(selected, _avg, _fmt_val)
-
-    tier3_factors = [
-        "Cardiovascular: IP Discharges & % of Total",
-        "Oncology: IP Discharges & Hospitalization Rate",
-        "Women's Health: IP Volume & % of Total",
-        "Orthopedics: IP Discharges & ASC Migration Rate",
-        "Neurosciences: IP Discharges & Stroke Rate",
-        "General Surgery: IP Volume & Ambulatory Migration",
-        "Neonatal / Normal Newborn: IP Volume",
-        "ASC Market Penetration & Competitor Count",
-        "Infusion Therapy: Ambulatory & Home Trends",
-        "Age-Adjusted Disease Hospitalization Rates",
-        "Alternative Payment Model Participation",
-    ]
-
     na = '<span style="color:#1a1a1a;">N/A</span>'
+
+    def _is_missing(v):
+        if v is None:
+            return True
+        s = str(v).strip()
+        return s == "" or s.lower() in {"nan", "none", "null", "na", "n/a"}
+
+    def _is_factor_key(k):
+        k = str(k)
+        excluded = {
+            "type",
+            "action",
+            "zipcode",
+            "zip_code",
+            "zip",
+            "state",
+            "state_abbr",
+            "state_key",
+            "place_name",
+            "entity_count",
+            "hospital_count",
+            "avg_entity_score",
+            "avg_confidence",
+            "hospital_potential",
+        }
+        if k in excluded:
+            return False
+        if k.startswith("_"):
+            return False
+        return True
+
+    def _pretty_col(k):
+        return str(k).replace("_", " ").strip().title()
+
+    def _to_num(v):
+        if v is None:
+            return None
+        if isinstance(v, (int, float)):
+            return float(v) if v == v else None
+        s = str(v).strip()
+        if not s or s.lower() in {"nan", "none", "null", "na", "n/a"}:
+            return None
+        s = s.replace("$", "").replace(",", "").replace("%", "")
+        s = s.replace("/1000", "").replace("/1,000", "")
+        try:
+            return float(s)
+        except (TypeError, ValueError):
+            return None
+
+    def _fmt_dynamic(key, raw):
+        if raw is None:
+            return na
+        num = _to_num(raw)
+        if num is None:
+            return html.escape(str(raw))
+        key_l = str(key).lower()
+        if "pct" in key_l or "percent" in key_l or "penetration" in key_l or "rate" in key_l:
+            return f"{num:.1f}%"
+        if "income" in key_l or "revenue" in key_l or "gdp" in key_l:
+            return f"${int(round(num)):,}"
+        if "year" in key_l:
+            return f"{int(round(num))}"
+        if abs(num) >= 1000:
+            return f"{int(round(num)):,}"
+        return f"{num:.1f}"
+
+    preferred = [k for _, k, _, _ in tier1_specs]
+    key_union = []
+    seen = set()
+    for row in selected:
+        for k, v in row.items():
+            if not _is_factor_key(k):
+                continue
+            if _is_missing(v):
+                continue
+            if k not in seen:
+                seen.add(k)
+                key_union.append(k)
+
+    ordered_keys = [k for k in preferred if k in seen] + sorted(
+        [k for k in key_union if k not in set(preferred)]
+    )
+
+    def _agg_for_key(k):
+        vals = [row.get(k) for row in selected if not _is_missing(row.get(k))]
+        if not vals:
+            return None
+        nums = [_to_num(v) for v in vals]
+        num_vals = [v for v in nums if v is not None]
+        if num_vals and (len(num_vals) / len(vals)) >= 0.6:
+            return sum(num_vals) / len(num_vals)
+        return Counter(str(v).strip() for v in vals).most_common(1)[0][0]
+
+    all_rows_agg = [(_pretty_col(k), _fmt_dynamic(k, _agg_for_key(k))) for k in ordered_keys]
+    if not all_rows_agg:
+        all_rows_agg = [("No parquet factors found", na)]
+
+    # User preference: parquet-driven factors should only appear in Tier 1.
+    tier1_rows = all_rows_agg
+    tier2_factors = []
+    tier3_rows = []
 
     def _tier_dropdown(title, rows, open_default=False):
         tid = title.lower().replace(" ", "_")
@@ -789,8 +865,8 @@ def market_tab_html(selected: list[dict], entities_df=None) -> str:
         return html
 
     tier1_html = _tier_dropdown("Tier 1", tier1_rows)
-    tier2_html = _tier_dropdown("Tier 2", tier2_factors)
-    tier3_html = _tier_dropdown("Tier 3", [(f, na) for f in tier3_factors])
+    tier2_html = _tier_dropdown("Tier 2", [])
+    tier3_html = _tier_dropdown("Tier 3", [])
 
     score_box += tier1_html + tier2_html + tier3_html
     score_box += "</div></div>"
@@ -802,15 +878,13 @@ def market_tab_html(selected: list[dict], entities_df=None) -> str:
         zc = zd.get("zipcode", "")
         st = zd.get("state", "")
         sc = float(zd.get("hospital_potential", 0) or 0)
+        sc_color = COLORMAP(sc)
         ent_count = int(zd.get("entity_count", 0) or 0)
         hosp_count = int(zd.get("hospital_count", 0) or 0)
-        zip_tier1 = []
-        for label, key, fmt, _ in tier1_specs:
-            zip_tier1.append((label, _fmt_t1(_tier1_get(zd, key), fmt)))
-
-        zt1 = _tier_dropdown("Tier 1", zip_tier1)
-        zt2 = _tier_dropdown("Tier 2", _build_tier2_rows_single(zd, _fmt_val))
-        zt3 = _tier_dropdown("Tier 3", [(f, na) for f in tier3_factors])
+        row_pairs = [(_pretty_col(k), _fmt_dynamic(k, zd.get(k))) for k in ordered_keys]
+        zt1 = _tier_dropdown("Tier 1", row_pairs if row_pairs else [("No parquet factors found", na)])
+        zt2 = _tier_dropdown("Tier 2", [])
+        zt3 = _tier_dropdown("Tier 3", [])
 
         hosp_content = ""
         if entities_df is not None and len(entities_df) > 0:
@@ -899,6 +973,9 @@ def market_tab_html(selected: list[dict], entities_df=None) -> str:
             f'<summary class="tier-dropdown-summary">Hospitals</summary>'
             f'<div class="tier-dropdown-content">{hosp_content}</div></details>'
         )
+        score_html = (
+            f'<span class="market-score-value" style="--ms-color:{sc_color};">{sc:.1f}</span>'
+        )
 
         items += (
             f'<li class="market-zip-item">'
@@ -906,12 +983,12 @@ def market_tab_html(selected: list[dict], entities_df=None) -> str:
             f'<summary class="zip-detail-summary">'
             f'<span style="font-size:0.8rem;color:#ff7f00;">{zc}</span>'
             f'<span style="font-size:0.72rem;color:#1a1a1a;margin-left:6px;">{st}</span>'
-            f'<span style="margin-left:auto;font-size:0.78rem;font-weight:800;'
-            f'color:#ff7f00;">{sc:.1f}</span>'
+            f'<span class="market-score-value market-zip-score-value" style="--ms-color:{sc_color};margin-left:auto;font-size:0.78rem;font-weight:800;">{sc:.1f}</span>'
+            f'<span class="market-zip-remove chip-remove" data-zip="{zc}" title="Remove ZIP">&times;</span>'
             f"</summary>"
             f'<div class="zip-detail-content">'
             f'<table style="width:100%;font-size:0.7rem;border-collapse:collapse;">'
-            f'{_row("Score", f"{sc:.1f}", "#ff7f00")}'
+            f'{_row("Score", score_html, "#ffffff")}'
             f'{_row("Entities", f"{ent_count:,}")}'
             f'{_row("Hospitals", f"{hosp_count:,}", "#22c55e")}'
             f"</table>"

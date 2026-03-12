@@ -23,6 +23,8 @@ def build_map(
     entities: pd.DataFrame | None = None,
     all_states: list[str] | None = None,
     current_state: str | None = None,
+    show_market_layer: bool = True,
+    show_entities_layer: bool = False,
 ) -> str:
     bounds = filtered.total_bounds
     center = [(bounds[1] + bounds[3]) / 2, (bounds[0] + bounds[2]) / 2]
@@ -31,7 +33,7 @@ def build_map(
         location=center,
         zoom_start=7,
         tiles=None,
-        prefer_canvas=True,
+        prefer_canvas=False,
         control_scale=False,
         attributionControl=False,
     )
@@ -52,10 +54,10 @@ def build_map(
         font-family: "Open Sans", "Segoe UI", Tahoma, Arial, sans-serif !important;
     }
     .zip-tooltip {
-        background: #ffe9cf !important;
-        color: #1a1a1a !important;
-        border: 2px solid #ffcf99 !important;
-        border-radius: 12px !important;
+        background: #000000 !important;
+        color: #ffffff !important;
+        border: 2px solid #ffffff !important;
+        border-radius: 0 !important;
         padding: 4px 10px !important;
         font-family: "Open Sans", "Segoe UI", Tahoma, Arial, sans-serif !important;
         font-size: 11px !important;
@@ -138,42 +140,48 @@ def build_map(
         tip_fields.append("place_name")
         tip_aliases.append("Place:")
     if "hospital_potential" in filtered.columns:
-        tip_fields.append("hospital_potential")
+        filtered["hospital_potential_tooltip"] = (
+            pd.to_numeric(filtered["hospital_potential"], errors="coerce")
+            .round(2)
+            .fillna(0.0)
+        )
+        tip_fields.append("hospital_potential_tooltip")
         tip_aliases.append("Score:")
 
     geojson_data = json.loads(filtered.to_json())
     _op = opacity
 
-    geo = folium.GeoJson(
-        geojson_data,
-        style_function=lambda f: {
-            "fillColor": COLORMAP(f["properties"].get("hospital_potential") or 0),
-            "color": "#30363d",
-            "weight": 0.3,
-            "fillOpacity": _op,
-        },
-        highlight_function=lambda f: {
-            "weight": 1.5,
-            "color": "#e6edf3",
-            "fillOpacity": min(_op + 0.15, 1.0),
-        },
-        tooltip=folium.GeoJsonTooltip(
-            fields=tip_fields,
-            aliases=tip_aliases,
-            sticky=True,
-            class_name="zip-tooltip",
-            style="",
-        ),
-        name="Market Score",
-    )
-    geo.add_to(m)
+    if show_market_layer:
+        geo = folium.GeoJson(
+            geojson_data,
+            style_function=lambda f: {
+                "fillColor": COLORMAP(f["properties"].get("hospital_potential") or 0),
+                "color": "#30363d",
+                "weight": 0.3,
+                "fillOpacity": _op,
+            },
+            highlight_function=lambda f: {
+                "weight": 1.5,
+                "color": "#e6edf3",
+                "fillOpacity": min(_op + 0.15, 1.0),
+            },
+            tooltip=folium.GeoJsonTooltip(
+                fields=tip_fields,
+                aliases=tip_aliases,
+                sticky=True,
+                class_name="zip-tooltip",
+                style="",
+            ),
+            name="Market Score",
+        )
+        geo.add_to(m)
 
-    if entities is not None and len(entities) > 0:
+    if show_entities_layer and entities is not None and len(entities) > 0:
         _add_entity_layer(m, entities, bounds)
 
     _inject_click_handler(m)
     _inject_opacity_listener(m, opacity)
-    _inject_opacity_slider(m, opacity)
+    _inject_opacity_slider(m, opacity, current_state=current_state)
     if focus_zip:
         _inject_focus_zip(m, focus_zip)
     if selected_zips:
@@ -195,14 +203,12 @@ def build_map(
         )
     )
 
-    folium.LayerControl(position="topright", collapsed=True).add_to(m)
-    _inject_states_in_layer_control(m, all_states or [], current_state or "")
     m.fit_bounds([[bounds[1], bounds[0]], [bounds[3], bounds[2]]])
     m.get_root().html.add_child(
         folium.Element(
             "<script>"
             "window.addEventListener('load', function(){"
-            f"var map={m.get_name()};"
+            f"var map=window['{m.get_name()}'];"
             "if(map && !window._initialZoomOutDone){"
             "window._initialZoomOutDone=true;"
             "map.setZoom(Math.max(map.getMinZoom(), map.getZoom()-1));"
@@ -286,17 +292,17 @@ def _add_entity_layer(
         zipcode = _safe(row.get("zip", ""))
         state = _safe(row.get("state", ""))
 
-        popup_lines = [f"<b style='font-size:13px;color:#1a1a1a;'>{name}</b>"]
+        popup_lines = [f"<b style='font-size:13px;color:#ffffff;'>{name}</b>"]
         if etype:
-            popup_lines.append(f"<span style='color:#1a1a1a;'>{etype}</span>")
-        popup_lines.append("<hr style='margin:4px 0;border-color:#30363d;'>")
+            popup_lines.append(f"<span style='color:#ffffff;'>{etype}</span>")
+        popup_lines.append("<hr style='margin:4px 0;border-color:#ffffff;'>")
         if npi:
             popup_lines.append(
-                f"<b>NPI:</b> {npi} <span style='color:#1a1a1a;'>(NPPES)</span>"
+                f"<b>NPI:</b> {npi} <span style='color:#ffffff;'>(NPPES)</span>"
             )
         if ccn:
             popup_lines.append(
-                f"<b>CCN:</b> {ccn} <span style='color:#1a1a1a;'>(CMS)</span>"
+                f"<b>CCN:</b> {ccn} <span style='color:#ffffff;'>(CMS)</span>"
             )
         if ownership:
             popup_lines.append(f"<b>Ownership:</b> {ownership}")
@@ -307,18 +313,18 @@ def _add_entity_layer(
             except (ValueError, TypeError):
                 popup_lines.append(f"<b>Rating:</b> {rating}")
         else:
-            popup_lines.append("<b>Rating:</b> <span style='color:#1a1a1a;'>N/A</span>")
-        popup_lines.append("<b>Entity Score:</b> <span style='color:#1a1a1a;'>TBD</span>")
+            popup_lines.append("<b>Rating:</b> <span style='color:#ffffff;'>N/A</span>")
+        popup_lines.append("<b>Entity Score:</b> <span style='color:#ffffff;'>TBD</span>")
         if emergency:
             popup_lines.append(f"<b>Emergency:</b> {emergency}")
         else:
-            popup_lines.append("<b>Emergency:</b> <span style='color:#1a1a1a;'>N/A</span>")
+            popup_lines.append("<b>Emergency:</b> <span style='color:#ffffff;'>N/A</span>")
         if city and zipcode:
             popup_lines.append(f"<b>Location:</b> {city}, {state} {zipcode}")
 
         popup_html = (
             f"<div style='font-family:\"Open Sans\",\"Segoe UI\",Tahoma,Arial,sans-serif;"
-            f"font-size:11px;color:#1a1a1a;line-height:1.5;min-width:180px;text-align:left;'>"
+            f"font-size:11px;color:#ffffff;line-height:1.5;min-width:180px;text-align:left;'>"
             f"{'<br>'.join(popup_lines)}</div>"
         )
 
@@ -360,21 +366,21 @@ def _add_entity_layer(
             """
     <style>
     .entity-popup .leaflet-popup-content-wrapper {
-        background: #ffe9cf !important;
-        color: #1a1a1a !important;
-        border-radius: 10px !important;
-        border: 2px solid #ffcf99 !important;
+        background: #000000 !important;
+        color: #ffffff !important;
+        border-radius: 0 !important;
+        border: 2px solid #ffffff !important;
         box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
         padding: 0 !important;
     }
     .entity-popup .leaflet-popup-content { margin: 10px 14px !important; text-align: left !important; }
-    .entity-popup .leaflet-popup-tip { background: #ffe9cf !important; }
+    .entity-popup .leaflet-popup-tip { background: #000000 !important; }
     .entity-popup .leaflet-popup-close-button {
-        color: #1a1a1a !important;
+        color: #ffffff !important;
         font-size: 18px !important;
         padding: 6px 8px 0 0 !important;
     }
-    .entity-popup .leaflet-popup-close-button:hover { color: #000 !important; }
+    .entity-popup .leaflet-popup-close-button:hover { color: #ffffff !important; }
     .entity-pin {
         position: relative;
         width: 18px; height: 24px;
@@ -409,7 +415,7 @@ def _add_entity_layer(
         geojson,
         name="Entities",
         marker=folium.Marker(icon=pin_icon),
-        show=False,
+        show=True,
     )
     layer.add_to(m)
 
@@ -421,7 +427,8 @@ def _add_entity_layer(
     script = f"""<script>
     window.addEventListener('load', function() {{
         var popupData = {popup_js_data};
-        var map = {m.get_name()};
+        var map = window['{m.get_name()}'];
+        if (!map) return;
         var hoverPopup = null;
 
         var entityLayer = {layer.get_name()};
@@ -469,6 +476,7 @@ window._maxSelected = 10;
 window._dollarMarkers = {{}};
 window._focusTimer = null;
 window._focusTransient = null;
+window._selectedBorderColor = '#ff7f00';
 window._normZip = function(v) {{
     var s = String(v || '').trim();
     if (!s) return '';
@@ -477,6 +485,73 @@ window._normZip = function(v) {{
     if (m) return m[0];
     var d = s.replace(/\\D/g, '');
     return d ? d.slice(0, 5).padStart(5, '0') : '';
+}};
+window._ensureStripePattern = function(map) {{
+    if (!map || !map.getContainer) return;
+    var svgs = map.getContainer().querySelectorAll('svg');
+    svgs.forEach(function(svg) {{
+        if (!svg.querySelector('#hmStripePattern')) {{
+            var defs = svg.querySelector('defs');
+            if (!defs) {{
+                defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+                svg.insertBefore(defs, svg.firstChild);
+            }}
+            var pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
+            pattern.setAttribute('id', 'hmStripePattern');
+            pattern.setAttribute('patternUnits', 'userSpaceOnUse');
+            pattern.setAttribute('width', '8');
+            pattern.setAttribute('height', '8');
+            pattern.setAttribute('patternTransform', 'rotate(45)');
+            var bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            bg.setAttribute('x', '0'); bg.setAttribute('y', '0');
+            bg.setAttribute('width', '8'); bg.setAttribute('height', '8');
+            bg.setAttribute('fill', '#ffffff');
+            var stripe = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            stripe.setAttribute('x1', '0'); stripe.setAttribute('y1', '0');
+            stripe.setAttribute('x2', '0'); stripe.setAttribute('y2', '8');
+            stripe.setAttribute('stroke', '#ff7f00');
+            stripe.setAttribute('stroke-width', '4');
+            pattern.appendChild(bg);
+            pattern.appendChild(stripe);
+            defs.appendChild(pattern);
+        }}
+    }});
+}};
+window._applySelectedStyle = function(layer, map, emphasize) {{
+    if (!layer || !layer.setStyle) return;
+    window._ensureStripePattern(map);
+    var selectedFillOpacity = Math.max(0.1, Math.min(1, window._mapOpacity || 1));
+    var borderW = emphasize ? 3 : 2.5;
+    layer.setStyle({{
+        fillColor: '#ffffff',
+        fillOpacity: selectedFillOpacity,
+        color: window._selectedBorderColor,
+        weight: borderW
+    }});
+    if (layer._path) {{
+        layer._path.setAttribute('fill', 'url(#hmStripePattern)');
+        layer._path.setAttribute('fill-opacity', String(selectedFillOpacity));
+        layer._path.style.fillOpacity = String(selectedFillOpacity);
+        layer._path.style.filter = emphasize
+            ? 'drop-shadow(0 0 10px rgba(255,127,0,0.75))'
+            : 'drop-shadow(0 0 8px rgba(255,127,0,0.65))';
+    }}
+}};
+window._clearSelectedStyle = function(layer) {{
+    if (!layer || !layer.setStyle) return;
+    var baseFill = layer._origFillColor || layer.options.fillColor || '#30363d';
+    layer.setStyle({{
+        fillColor: baseFill,
+        fillOpacity: window._mapOpacity,
+        color: '#30363d',
+        weight: 0.3
+    }});
+    if (layer._path) {{
+        layer._path.setAttribute('fill', baseFill);
+        layer._path.setAttribute('fill-opacity', String(window._mapOpacity));
+        layer._path.style.filter = '';
+        layer._path.style.fillOpacity = '';
+    }}
 }};
 window._clearTransientFocus = function() {{
     if (window._focusTimer) {{
@@ -492,13 +567,7 @@ window._clearTransientFocus = function() {{
     var zip = cur.zip;
     if (!window._selectedLayers[zip]) {{
         layer._focusHighlight = false;
-        layer.setStyle({{
-            fillColor: layer._origFillColor || layer.options.fillColor || '#30363d',
-            fillOpacity: window._mapOpacity,
-            color: '#30363d',
-            weight: 0.3
-        }});
-        if (layer._path) layer._path.style.filter = '';
+        window._clearSelectedStyle(layer);
     }}
     window._focusTransient = null;
 }};
@@ -510,8 +579,7 @@ window._focusZipTransient = function(layer, map, zipcode, durationMs) {{
     if (!window._selectedLayers[zip]) {{
         if (!layer._origFillColor) layer._origFillColor = layer.options.fillColor || '#30363d';
         layer._focusHighlight = true;
-        layer.setStyle({{fillColor: '#22c55e', fillOpacity: 0.45, color: '#15803d', weight: 2.5}});
-        if (layer._path) layer._path.style.filter = 'drop-shadow(0 0 10px rgba(34,197,94,0.7))';
+        window._applySelectedStyle(layer, map, true);
         window._focusTransient = {{layer: layer, zip: zip}};
         window._focusTimer = setTimeout(function() {{
             window._clearTransientFocus();
@@ -540,8 +608,7 @@ window._deselectZip = function(zipcode) {{
     var layer = window._selectedLayers[zip];
     if (layer) {{
         layer._focusHighlight = false;
-        layer.setStyle({{fillColor: layer._origFillColor || layer.options.fillColor, fillOpacity: window._mapOpacity, weight: 0.3, color: '#30363d'}});
-        if (layer._path) layer._path.style.filter = '';
+        window._clearSelectedStyle(layer);
         if (window._dollarMarkers[zip]) {{
             window._dollarMarkers[zip].remove();
             delete window._dollarMarkers[zip];
@@ -556,19 +623,57 @@ window._selectZip = function(layer, map, noZoom) {{
     if (Object.keys(window._selectedLayers).length >= window._maxSelected) return false;
     if (!layer._origFillColor) layer._origFillColor = layer.options.fillColor || '#30363d';
     layer._focusHighlight = true;
-    layer.setStyle({{fillColor: '#22c55e', fillOpacity: 0.45, color: '#15803d', weight: 2.5}});
-    if (layer._path) {{
-        layer._path.style.filter = 'drop-shadow(0 0 10px rgba(21,128,61,0.7))';
-    }}
+    window._applySelectedStyle(layer, map, false);
     layer.bringToFront();
-    window._dollarMarkers[zipcode] = window._addDollarSign(layer, map);
     if (!noZoom) map.fitBounds(layer.getBounds(), {{maxZoom: 11, padding: [40, 40]}});
     window._selectedLayers[zipcode] = layer;
     return true;
 }};
 
 window.addEventListener('load', function() {{
-    var map = {map_var};
+    var map = window['{map_var}'];
+    if (!map) {{
+        setTimeout(function() {{
+            var retryMap = window['{map_var}'];
+            if (!retryMap) return;
+            retryMap.eachLayer(function(layer) {{
+                if (layer.eachLayer) {{
+                    layer.eachLayer(function(sub) {{
+                        if (sub.feature && sub.feature.properties && sub.feature.properties.zipcode) {{
+                            sub.on('click', function() {{
+                                var p = sub.feature.properties;
+                                var zipcode = window._normZip(p.zipcode || '');
+                                var isSelected = !!window._selectedLayers[zipcode];
+                                var action;
+                                if (isSelected) {{
+                                    window._deselectZip(zipcode);
+                                    action = 'deselect';
+                                }} else {{
+                                    var added = window._selectZip(sub, retryMap);
+                                    if (!added) {{
+                                        window.parent.postMessage({{
+                                            type: 'zip_click', action: 'limit_reached',
+                                            zipcode: zipcode, state: String(p.state || '')
+                                        }}, '*');
+                                        return;
+                                    }}
+                                    action = 'select';
+                                }}
+                                var payload = Object.assign({{}}, p || {{}});
+                                payload.type = 'zip_click';
+                                payload.action = action;
+                                payload.zipcode = zipcode;
+                                payload.zip_code = String(p.zip_code || p.zipcode || zipcode || '');
+                                payload.state = String(p.state || '');
+                                window.parent.postMessage(payload, '*');
+                            }});
+                        }}
+                    }});
+                }}
+            }});
+        }}, 150);
+        return;
+    }}
     map.eachLayer(function(layer) {{
         if (layer.eachLayer) {{
             layer.eachLayer(function(sub) {{
@@ -592,114 +697,13 @@ window.addEventListener('load', function() {{
                             }}
                             action = 'select';
                         }}
-                        window.parent.postMessage({{
-                            type: 'zip_click', action: action,
-                            zipcode: zipcode,
-                            zip_code: String(p.zip_code || p.zipcode || ''),
-                            state: String(p.state || ''),
-                            data_year: Number(p.data_year || 0),
-                            population_growth_rate_2yr: Number(p.population_growth_rate_2yr || 0),
-                            net_population_change_2yr: Number(p.net_population_change_2yr || 0),
-                            historical_year: Number(p.historical_year || 0),
-                            age_0_17: Number(p.age_0_17 || 0),
-                            age_18_44: Number(p.age_18_44 || 0),
-                            age_45_64: Number(p.age_45_64 || 0),
-                            age_65_plus: Number(p.age_65_plus || 0),
-                            age_0_17_pct: Number(p.age_0_17_pct || 0),
-                            age_18_44_pct: Number(p.age_18_44_pct || 0),
-                            age_45_64_pct: Number(p.age_45_64_pct || 0),
-                            age_65_plus_pct: Number(p.age_65_plus_pct || 0),
-                            white_alone: Number(p.white_alone || 0),
-                            black_alone: Number(p.black_alone || 0),
-                            asian_alone: Number(p.asian_alone || 0),
-                            hispanic_latino: Number(p.hispanic_latino || 0),
-                            white_pct: Number(p.white_pct || p.pct_white || 0),
-                            black_pct: Number(p.black_pct || p.pct_black || 0),
-                            asian_pct: Number(p.asian_pct || p.pct_asian || 0),
-                            hispanic_pct: Number(p.hispanic_pct || p.pct_hispanic || 0),
-                            bachelors_or_higher: Number(p.bachelors_or_higher || 0),
-                            in_migration_from_other_state: Number(p.in_migration_from_other_state || 0),
-                            in_migration_rate: Number(p.in_migration_rate || p.in_migration_pct || 0),
-                            unemployed: Number(p.unemployed || 0),
-                            per_capita_income_growth_2yr: Number(p.per_capita_income_growth_2yr || 0),
-                            top_industry_employment: Number(p.top_industry_employment || 0),
-                            industry_agriculture: Number(p.industry_agriculture || 0),
-                            industry_construction: Number(p.industry_construction || 0),
-                            industry_manufacturing: Number(p.industry_manufacturing || 0),
-                            industry_retail: Number(p.industry_retail || 0),
-                            industry_finance: Number(p.industry_finance || 0),
-                            industry_professional_tech: Number(p.industry_professional_tech || 0),
-                            industry_education_and_health: Number(p.industry_education_and_health || 0),
-                            industry_arts_entertainment: Number(p.industry_arts_entertainment || 0),
-                            industry_other_services: Number(p.industry_other_services || 0),
-                            industry_public_administration: Number(p.industry_public_administration || 0),
-                            county_name: String(p.county_name || ''),
-                            county_flips: String(p.county_flips || p.county_fips || ''),
-                            state_fips: String(p.state_fips || ''),
-                            state_name: String(p.state_name || p.state || ''),
-                            msa: String(p.msa || ''),
-                            msa_name: String(p.msa_name || ''),
-                            county_level_gdp_thousands: Number(p.county_level_gdp_thousands || 0),
-                            county_level_gdp_growth_5yr: Number(p.county_level_gdp_growth_5yr || 0),
-                            gdp_year: Number(p.gdp_year || 0),
-                            msa_level_gdp_millions: Number(p.msa_level_gdp_millions || 0),
-                            msa_gdp_growth_5yr: Number(p.msa_gdp_growth_5yr || 0),
-                            msa_gdp_year: Number(p.msa_gdp_year || 0),
-                            hospital_potential: Number(p.hospital_potential || 0),
-                            entity_count: Number(p.entity_count || 0),
-                            hospital_count: Number(p.hospital_count || 0),
-                            avg_entity_score: Number(p.avg_entity_score || 0),
-                            avg_confidence: Number(p.avg_confidence || 0),
-                            total_population: Number(p.total_population || 0),
-                            median_household_income: Number(p.median_household_income || 0),
-                            median_age: Number(p.median_age || 0),
-                            per_capita_income: Number(p.per_capita_income || 0),
-                            bachelors_or_higher_pct: Number(p.bachelors_or_higher_pct || 0),
-                            pct_under_18: Number(p.pct_under_18 || 0),
-                            pct_18_44: Number(p.pct_18_44 || 0),
-                            pct_45_64: Number(p.pct_45_64 || 0),
-                            pct_18_64: Number(p.pct_18_64 || 0),
-                            pct_65_plus: Number(p.pct_65_plus || 0),
-                            pct_white: Number(p.pct_white || 0),
-                            pct_black: Number(p.pct_black || 0),
-                            pct_asian: Number(p.pct_asian || 0),
-                            pct_hispanic: Number(p.pct_hispanic || 0),
-                            unemployment_rate: Number(p.unemployment_rate || 0),
-                            population_growth_5yr_pct: Number(p.population_growth_5yr_pct || 0),
-                            birth_rate_per_1000: Number(p.birth_rate_per_1000 || 0),
-                            in_migration_pct: Number(p.in_migration_pct || 0),
-                            top_industry: String(p.top_industry || ''),
-                            pcp_count: Number(p.pcp_count || 0),
-                            specialist_count: Number(p.specialist_count || 0),
-                            pcp_per_100k: Number(p.pcp_per_100k || 0),
-                            specialist_per_100k: Number(p.specialist_per_100k || 0),
-                            facility_hospital: Number(p.facility_hospital || 0),
-                            facility_asc: Number(p.facility_asc || 0),
-                            facility_lab: Number(p.facility_lab || 0),
-                            facility_imaging: Number(p.facility_imaging || 0),
-                            facility_urgent_care: Number(p.facility_urgent_care || 0),
-                            facility_snf: Number(p.facility_snf || 0),
-                            facility_home_health: Number(p.facility_home_health || 0),
-                            facility_total: Number(p.facility_total || 0),
-                            total_beds: Number(p.total_beds || 0),
-                            total_discharges: Number(p.total_discharges || 0),
-                            inpatient_beds_per_100k: Number(p.inpatient_beds_per_100k || 0),
-                            inpatient_discharges_per_100k: Number(p.inpatient_discharges_per_100k || 0),
-                            bed_utilization_rate: Number(p.bed_utilization_rate || 0),
-                            operating_margin_pct: Number(p.operating_margin_pct || 0),
-                            net_patient_revenue: Number(p.net_patient_revenue || 0),
-                            total_operating_expenses: Number(p.total_operating_expenses || 0),
-                            bene_count: Number(p.bene_count || 0),
-                            medicare_beneficiary_penetration_pct: Number(p.medicare_beneficiary_penetration_pct || 0),
-                            ma_penetration: Number(p.ma_penetration || 0),
-                            er_visits_per_1k: Number(p.er_visits_per_1k || 0),
-                            ed_visits_per_100k: Number(p.ed_visits_per_100k || 0),
-                            ip_stays_per_1k: Number(p.ip_stays_per_1k || 0),
-                            uninsured_rate: Number(p.uninsured_rate || 0),
-                            medicaid_pct: Number(p.medicaid_pct || 0),
-                            outpatient_visits_per_1k: Number(p.outpatient_visits_per_1k || 0),
-                            hhi_market_concentration: Number(p.hhi_market_concentration || 0)
-                        }}, '*');
+                        var payload = Object.assign({{}}, p || {{}});
+                        payload.type = 'zip_click';
+                        payload.action = action;
+                        payload.zipcode = zipcode;
+                        payload.zip_code = String(p.zip_code || p.zipcode || zipcode || '');
+                        payload.state = String(p.state || '');
+                        window.parent.postMessage(payload, '*');
                     }});
                 }}
             }});
@@ -715,7 +719,8 @@ def _inject_opacity_listener(m: folium.Map, initial_opacity: float) -> None:
     script = f"""<script>
 window._mapOpacity = {initial_opacity};
 window.addEventListener('load', function() {{
-    var map = {map_var};
+    var map = window['{map_var}'];
+    if (!map) return;
     map.eachLayer(function(layer) {{
         if (layer.eachLayer) {{
             layer.eachLayer(function(sub) {{
@@ -724,11 +729,7 @@ window.addEventListener('load', function() {{
                     sub.off('mouseover').off('mouseout');
                     sub.on('mouseover', function(e) {{
                         if (e.target._focusHighlight) {{
-                            e.target.setStyle({{
-                                fillColor: '#22c55e', fillOpacity: 0.55,
-                                weight: 3, color: '#15803d'
-                            }});
-                            if (e.target._path) e.target._path.style.filter = 'drop-shadow(0 0 12px rgba(21,128,61,0.8))';
+                            window._applySelectedStyle(e.target, map, true);
                         }} else {{
                             e.target.setStyle({{
                                 fillOpacity: Math.min(window._mapOpacity + 0.15, 1.0),
@@ -738,11 +739,7 @@ window.addEventListener('load', function() {{
                     }});
                     sub.on('mouseout', function(e) {{
                         if (e.target._focusHighlight) {{
-                            e.target.setStyle({{
-                                fillColor: '#22c55e', fillOpacity: 0.45,
-                                weight: 2.5, color: '#15803d'
-                            }});
-                            if (e.target._path) e.target._path.style.filter = 'drop-shadow(0 0 10px rgba(21,128,61,0.7))';
+                            window._applySelectedStyle(e.target, map, false);
                         }} else {{
                             e.target.setStyle({{
                                 fillOpacity: window._mapOpacity, weight: 0.3, color: '#30363d'
@@ -762,7 +759,8 @@ window.addEventListener('message', function(event) {{
     }}
     if (event.data && event.data.type === 'select_zip') {{
         var targetZip = window._normZip(event.data.zipcode || '');
-        var map = {map_var};
+        var map = window['{map_var}'];
+        if (!map) return;
         if (targetZip && !window._selectedLayers[targetZip]) {{
             map.eachLayer(function(layer) {{
                 if (layer.eachLayer) {{
@@ -779,7 +777,8 @@ window.addEventListener('message', function(event) {{
     if (event.data && event.data.type === 'focus_blink') {{
         var zip = window._normZip(event.data.zipcode || '');
         if (window._blinkingZip === zip) return;
-        var map = {map_var};
+        var map = window['{map_var}'];
+        if (!map) return;
         var found = null;
         map.eachLayer(function(layer) {{
             if (layer.eachLayer) {{
@@ -799,26 +798,6 @@ window.addEventListener('message', function(event) {{
     }}
     if (event.data && event.data.type === 'clear_focus_highlight') {{
         window._clearTransientFocus();
-        var map = {map_var};
-        map.eachLayer(function(layer) {{
-            if (layer.eachLayer) {{
-                layer.eachLayer(function(sub) {{
-                    if (sub.feature && sub.feature.properties && sub.feature.properties.zipcode && sub.setStyle) {{
-                        var zip = window._normZip(sub.feature.properties.zipcode || '');
-                        if (!window._selectedLayers[zip]) {{
-                            sub._focusHighlight = false;
-                            sub.setStyle({{
-                                fillColor: sub._origFillColor || sub.options.fillColor || '#30363d',
-                                fillOpacity: window._mapOpacity,
-                                color: '#30363d',
-                                weight: 0.3
-                            }});
-                            if (sub._path) sub._path.style.filter = '';
-                        }}
-                    }}
-                }});
-            }}
-        }});
     }}
 }});
 </script>"""
@@ -842,39 +821,39 @@ def _inject_states_in_layer_control(m: folium.Map, states: list[str], current: s
 }}
 .lc-states-section label {{
     display: block; padding: 3px 0; cursor: pointer;
-    font-size: 0.75rem; color: #1a1a1a;
+    font-size: 0.75rem; color: #ffffff;
 }}
-.lc-states-section label:hover {{ color: #1a1a1a; }}
+.lc-states-section label:hover {{ color: #ff7f00; }}
 .lc-states-section input[type="radio"] {{
     accent-color: #f97316; margin-right: 6px; vertical-align: middle;
 }}
 .leaflet-control-layers {{
     background: transparent !important;
     border: none !important;
-    border-radius: 8px !important;
+    border-radius: 0 !important;
     box-shadow: none !important;
     color: #1a1a1a !important;
     padding: 0 !important;
     font-family: "Open Sans", "Segoe UI", Tahoma, Arial, sans-serif !important;
 }}
 .leaflet-control-layers-list {{
-    background: #ffe9cf !important;
-    border: 1px solid #ffcf99 !important;
-    border-radius: 8px !important;
+    background: #000000 !important;
+    border: 2px solid #ffffff !important;
+    border-radius: 0 !important;
     padding: 16px 20px !important;
     margin-top: 6px !important;
     min-width: 0 !important;
     width: max-content !important;
 }}
 .leaflet-control-layers label {{
-    color: #1a1a1a !important; font-size: 0.86rem !important;
+    color: #ffffff !important; font-size: 0.86rem !important;
     padding: 3px 0 !important;
     margin: 0 !important;
 }}
 .leaflet-control-layers-toggle {{
-    background-color: #ffe9cf !important;
-    border: 2px solid #ffcf99 !important;
-    border-radius: 8px !important;
+    background-color: #000000 !important;
+    border: 2px solid #ffffff !important;
+    border-radius: 0 !important;
     width: 44px !important; height: 44px !important;
     background-image: url('https://unpkg.com/leaflet@1.9.4/dist/images/layers.png') !important;
     background-repeat: no-repeat !important;
@@ -886,7 +865,8 @@ def _inject_states_in_layer_control(m: folium.Map, states: list[str], current: s
     content: none !important;
 }}
 .leaflet-control-layers-toggle:hover {{
-    border-color: #ffcf99 !important;
+    background-color: #000000 !important;
+    border-color: #ffffff !important;
     box-shadow: 0 2px 6px rgba(0,0,0,0.2) !important;
 }}
 .leaflet-control-layers input[type="checkbox"] {{
@@ -901,14 +881,14 @@ def _inject_states_in_layer_control(m: folium.Map, states: list[str], current: s
     min-width: 0 !important;
     width: max-content !important;
     padding: 14px 16px !important;
-    border: 2px solid #ffcf99 !important;
+    border: 2px solid #ffffff !important;
 }}
 .leaflet-control-layers-expanded .leaflet-control-layers-list label {{
     font-size: 0.9rem !important;
     padding: 3px 0 !important;
 }}
 .leaflet-top .leaflet-control:hover .leaflet-control-layers-list {{
-    border: 2px solid #ffcf99 !important;
+    border: 2px solid #ffffff !important;
 }}
 </style>
 <script>
@@ -949,7 +929,7 @@ document.addEventListener('DOMContentLoaded', function() {{
     m.get_root().html.add_child(folium.Element(html))
 
 
-def _inject_opacity_slider(m: folium.Map, initial_opacity: float) -> None:
+def _inject_opacity_slider(m: folium.Map, initial_opacity: float, current_state: str | None = None) -> None:
     map_var = m.get_name()
     pct = int(initial_opacity * 100)
     script = f"""
@@ -957,18 +937,20 @@ def _inject_opacity_slider(m: folium.Map, initial_opacity: float) -> None:
 .opacity-ctrl {{
     position: fixed; right: 10px; top: calc(50% + 24px); transform: translateY(-50%);
     z-index: 1000; display: flex; flex-direction: column; align-items: center;
-    background: #ffe9cf; border-radius: 8px; padding: 8px 0;
-    border: 2px solid #ffcf99; gap: 8px;
+    background: #000000; border-radius: 0; padding: 8px 0;
+    border: 2px solid #ffffff; gap: 8px;
+    height: 280px;
+    justify-content: space-between;
     width: 62px; box-sizing: border-box;
     font-family: "Open Sans", "Segoe UI", Tahoma, Arial, sans-serif !important;
 }}
 .opacity-ctrl .op-label {{
-    color: #1a1a1a; font-size: 0.72rem; letter-spacing: 0.02em; text-transform: none;
+    color: #ffffff; font-size: 0.72rem; letter-spacing: 0.02em; text-transform: none;
     writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg); margin: 4px 0;
     font-weight: 600;
 }}
 .opacity-ctrl input[type="range"] {{
-    writing-mode: vertical-lr; direction: rtl; width: 8px; height: 132px;
+    writing-mode: vertical-lr; direction: rtl; width: 8px; height: 190px;
     appearance: none; -webkit-appearance: none; background: transparent; cursor: pointer;
 }}
 .opacity-ctrl input[type="range"]::-webkit-slider-runnable-track {{
@@ -976,20 +958,21 @@ def _inject_opacity_slider(m: folium.Map, initial_opacity: float) -> None:
     border-radius: 4px; border: 1px solid rgba(0,0,0,0.25);
 }}
 .opacity-ctrl input[type="range"]::-webkit-slider-thumb {{
-    -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
-    background: #fff; border: 1px solid #ffcf99;
-    box-shadow: 0 0 3px rgba(0,0,0,0.35); margin-left: -4px;
+    -webkit-appearance: none; width: 20px; height: 8px; border-radius: 1px;
+    background: #ffffff; border: 1px solid #ffffff;
+    box-shadow: 0 0 3px rgba(0,0,0,0.35); margin-left: -6px;
+    transform: none;
 }}
 .opacity-ctrl input[type="range"]::-moz-range-track {{
     width: 8px; background: #ff7f00;
     border-radius: 4px; border: 1px solid rgba(0,0,0,0.25);
 }}
 .opacity-ctrl input[type="range"]::-moz-range-thumb {{
-    width: 14px; height: 14px; border-radius: 50%;
-    background: #fff; border: 1px solid #ffcf99;
+    width: 20px; height: 8px; border-radius: 1px;
+    background: #ffffff; border: 1px solid #ffffff;
     box-shadow: 0 0 3px rgba(0,0,0,0.35);
 }}
-.opacity-ctrl .op-val {{ color: #1a1a1a; font-size: 0.76rem; font-weight: 600; width: 38px; text-align: center; }}
+.opacity-ctrl .op-val {{ color: #ffffff; font-size: 0.76rem; font-weight: 600; width: 38px; text-align: center; }}
 </style>
 <div class="opacity-ctrl">
     <span class="op-val" id="op-pct">{pct}%</span>
@@ -1000,25 +983,54 @@ def _inject_opacity_slider(m: folium.Map, initial_opacity: float) -> None:
 (function() {{
     var slider = document.getElementById('opacity-slider');
     var label = document.getElementById('op-pct');
-    var debounce = null;
-    slider.addEventListener('input', function() {{
-        var val = parseInt(this.value) / 100;
-        label.textContent = this.value + '%';
+    function applyOpacity(val) {{
         window._mapOpacity = val;
-        var map = {map_var};
+        var map = window['{map_var}'];
+        if (!map) return;
         map.eachLayer(function(layer) {{
             if (layer.eachLayer) {{
                 layer.eachLayer(function(sub) {{
-                    if (sub.feature && sub.feature.properties && sub.feature.properties.zipcode && sub.setStyle && !sub._focusHighlight) {{
-                        sub.setStyle({{fillOpacity: val}});
+                    if (sub.feature && sub.feature.properties && sub.feature.properties.zipcode && sub.setStyle) {{
+                        if (sub._focusHighlight) {{
+                            window._applySelectedStyle(sub, map, false);
+                        }} else {{
+                            sub.setStyle({{fillOpacity: val}});
+                            if (sub._path) {{
+                                sub._path.setAttribute('fill-opacity', String(val));
+                                sub._path.style.fillOpacity = String(val);
+                                sub._path.style.opacity = '1';
+                            }}
+                        }}
                     }}
                 }});
             }}
         }});
-        clearTimeout(debounce);
-        debounce = setTimeout(function() {{
-            window.parent.postMessage({{type: 'opacity_save', value: val}}, '*');
-        }}, 300);
+        // Hard fallback: force visible opacity update on all rendered SVG polygons.
+        try {{
+            var container = map.getContainer();
+            if (container) {{
+                var paths = container.querySelectorAll('path.leaflet-interactive');
+                paths.forEach(function(p) {{
+                    var fillVal = p.getAttribute('fill') || '';
+                    var target = (fillVal.indexOf('hmStripePattern') >= 0)
+                        ? Math.max(0.1, val)
+                        : val;
+                    p.setAttribute('fill-opacity', String(target));
+                    p.style.fillOpacity = String(target);
+                    p.style.opacity = '1';
+                }});
+            }}
+        }} catch (e) {{}}
+    }}
+    function pushOpacity(val) {{
+        window.parent.postMessage({{type: 'opacity_save', value: val}}, '*');
+    }}
+    applyOpacity(parseInt(slider.value) / 100);
+    slider.addEventListener('input', function() {{
+        var val = parseInt(this.value) / 100;
+        label.textContent = this.value + '%';
+        applyOpacity(val);
+        pushOpacity(val);
     }});
 }})();
 </script>"""
@@ -1032,7 +1044,8 @@ window.addEventListener('load', function() {{
     var targetZip = window._normZip ? window._normZip('{zipcode}') : '{zipcode}';
     if (!targetZip) return;
     window._blinkingZip = targetZip;
-    var map = {map_var};
+    var map = window['{map_var}'];
+    if (!map) return;
     var attempts = 0;
     function tryFocus() {{
         var found = null;
@@ -1070,7 +1083,8 @@ def _inject_preselected(m: folium.Map, zipcodes: list[str]) -> None:
     zips_js = ",".join(f"'{z}'" for z in zipcodes)
     script = f"""<script>
 window.addEventListener('load', function() {{
-    var map = {map_var};
+    var map = window['{map_var}'];
+    if (!map) return;
     var targets = new Set([{zips_js}]);
     map.eachLayer(function(layer) {{
         if (layer.eachLayer) {{
@@ -1090,19 +1104,19 @@ window.addEventListener('load', function() {{
 def _inject_legend(m: folium.Map) -> None:
     legend = (
         '<div style="position:fixed;bottom:18px;left:50%;transform:translateX(-50%);'
-        'z-index:1000;background:#ffe9cf;border-radius:8px;'
-        'padding:12px 18px 14px;border:2px solid #ffcf99;'
+        'z-index:1000;background:#000000;border-radius:0;'
+        'padding:12px 18px 14px;border:2px solid #ffffff;'
         'font-family:\'Open Sans\',\'Segoe UI\',Tahoma,Arial,sans-serif;">'
-        '<div style="text-align:center;color:#1a1a1a;font-size:0.92rem;font-weight:600;'
+        '<div style="text-align:center;color:#ffffff;font-size:0.92rem;font-weight:600;'
         'letter-spacing:0.02em;text-transform:none;margin-bottom:4px;">'
         "Market Score</div>"
         '<div style="display:flex;align-items:center;gap:10px;">'
-        '<span style="color:#1a1a1a;font-size:0.76rem;font-weight:600;letter-spacing:0.02em;'
+        '<span style="color:#ffffff;font-size:0.76rem;font-weight:600;letter-spacing:0.02em;'
         'text-transform:uppercase;">Low</span>'
-        '<div style="width:280px;height:16px;border-radius:3px;'
-        "background:linear-gradient(to right,#ffffff,#fff0d4,#ffd699,#ffb84d,#ff9b1a,#ff7f00);"
-        'border:2px solid #ffcf99;"></div>'
-        '<span style="color:#1a1a1a;font-size:0.76rem;font-weight:600;letter-spacing:0.02em;'
+        '<div style="width:280px;height:16px;border-radius:0;'
+        "background:linear-gradient(to right,#ffffff,#fff0d4,#ffd699,#ffb84d,#ff7f00,#ff7f00);"
+        'border:none;"></div>'
+        '<span style="color:#ffffff;font-size:0.76rem;font-weight:600;letter-spacing:0.02em;'
         'text-transform:uppercase;">High</span>'
         "</div></div>"
     )

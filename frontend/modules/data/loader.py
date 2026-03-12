@@ -6,6 +6,9 @@ import geopandas as gpd
 from config import DATA_PATH, ENTITIES_PATH, BACKEND_DIR
 
 _DEFAULT_STATES = {"Florida", "Georgia", "Alabama"}
+_TIER1_PARQUET_PATH = os.path.join(
+    BACKEND_DIR, "data", "raw", "tier1", "final_tier1_percentiles.parquet"
+)
 
 
 def _auto_build_gpkg(empty_mode: bool = False):
@@ -33,7 +36,7 @@ def load_data() -> gpd.GeoDataFrame:
             print("  .gpkg and entities.parquet missing — building map in empty mode ...")
             _auto_build_gpkg(empty_mode=True)
     gdf = gpd.read_file(DATA_PATH)
-    gdf = _merge_tier1_excels(gdf)
+    gdf = _merge_tier1_parquet(gdf)
     gdf = _add_place_names(gdf)
     for col in (
         "entity_count",
@@ -54,85 +57,151 @@ def _to_snake(name: str) -> str:
     return s
 
 
-def _merge_tier1_excels(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """Overlay raw Tier 1 Excel values onto the map dataframe by ZIP/state."""
-    tier1_dir = os.path.join(BACKEND_DIR, "data", "raw", "tier1")
-    if not os.path.isdir(tier1_dir):
+def _norm_zip5(v: object) -> str:
+    s = str(v).strip()
+    if not s or s.lower() in {"nan", "none"}:
+        return ""
+    if s.endswith(".0"):
+        s = s[:-2]
+    digits = "".join(ch for ch in s if ch.isdigit())
+    return digits[:5].zfill(5) if digits else ""
+
+
+def _merge_tier1_parquet(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Overlay final Tier 1 parquet values onto map dataframe by ZIP/state."""
+    if not os.path.exists(_TIER1_PARQUET_PATH):
+        print(f"  Tier 1 parquet not found: {_TIER1_PARQUET_PATH}")
         return gdf
 
-    files = [
-        os.path.join(tier1_dir, f)
-        for f in os.listdir(tier1_dir)
-        if f.lower().endswith(".xlsx")
-    ]
-    if not files:
+    try:
+        tier1 = pd.read_parquet(_TIER1_PARQUET_PATH)
+    except Exception as e:
+        print(f"  Failed to read Tier 1 parquet ({_TIER1_PARQUET_PATH}): {e}")
         return gdf
 
-    frames = []
-    for fp in files:
-        try:
-            df = pd.read_excel(fp)
-        except Exception:
-            continue
-        if df is None or df.empty:
-            continue
-
-        df.columns = [_to_snake(c) for c in df.columns]
-        if "zip_code" not in df.columns and "zipcode" in df.columns:
-            df["zip_code"] = df["zipcode"]
-        if "county_fips" in df.columns and "county_flips" not in df.columns:
-            df["county_flips"] = df["county_fips"]
-        if "zip_code" not in df.columns:
-            continue
-
-        df["zip_code"] = df["zip_code"].astype(str).str.zfill(5)
-        if "state_name" in df.columns:
-            df["state_name"] = df["state_name"].astype(str).str.strip()
-        else:
-            base = os.path.basename(fp).split("_")[0]
-            df["state_name"] = base
-        df["state_key"] = df["state_name"].astype(str).str.strip().str.lower()
-
-        if "data_year" in df.columns:
-            df["data_year"] = pd.to_numeric(df["data_year"], errors="coerce")
-            df = df.sort_values("data_year", ascending=False)
-        elif "historical_year" in df.columns:
-            df["historical_year"] = pd.to_numeric(df["historical_year"], errors="coerce")
-            df = df.sort_values("historical_year", ascending=False)
-
-        df = df.drop_duplicates(subset=["zip_code", "state_key"], keep="first")
-        frames.append(df)
-
-    if not frames:
+    if tier1 is None or tier1.empty:
+        print(f"  Tier 1 parquet is empty: {_TIER1_PARQUET_PATH}")
         return gdf
 
-    tier1 = pd.concat(frames, ignore_index=True)
-    if tier1.empty:
+    tier1 = tier1.copy()
+    tier1.columns = [_to_snake(c) for c in tier1.columns]
+
+    # Normalize ZIP/state key columns from likely schema variants.
+    if "zip_code" not in tier1.columns:
+        if "zipcode" in tier1.columns:
+            tier1["zip_code"] = tier1["zipcode"]
+        elif "zip" in tier1.columns:
+            tier1["zip_code"] = tier1["zip"]
+    if "zip_code" not in tier1.columns:
+        print("  Tier 1 parquet missing ZIP column (zip_code/zipcode/zip).")
         return gdf
+
+    if "state_name" not in tier1.columns:
+        if "state" in tier1.columns:
+            tier1["state_name"] = tier1["state"]
+        elif "state_abbr" in tier1.columns:
+            tier1["state_name"] = tier1["state_abbr"]
+
+    tier1["zip_code"] = tier1["zip_code"].map(_norm_zip5)
+    if "state_name" in tier1.columns:
+        tier1["state_name"] = tier1["state_name"].astype(str).str.strip()
+        # Normalize both full names and 2-letter abbreviations into a comparable key.
+        _state_map = {
+            "al": "alabama",
+            "fl": "florida",
+            "ga": "georgia",
+            "alabama": "alabama",
+            "florida": "florida",
+            "georgia": "georgia",
+        }
+        tier1["state_key"] = (
+            tier1["state_name"]
+            .astype(str)
+            .str.strip()
+            .str.lower()
+            .map(lambda s: _state_map.get(s, s))
+        )
+    else:
+        tier1["state_key"] = ""
+
+    # Keep most recent row by ZIP/state if a year column exists.
+    if "data_year" in tier1.columns:
+        tier1["data_year"] = pd.to_numeric(tier1["data_year"], errors="coerce")
+        tier1 = tier1.sort_values("data_year", ascending=False)
+    elif "historical_year" in tier1.columns:
+        tier1["historical_year"] = pd.to_numeric(tier1["historical_year"], errors="coerce")
+        tier1 = tier1.sort_values("historical_year", ascending=False)
+
+    dedupe_keys = ["zip_code", "state_key"] if "state_name" in tier1.columns else ["zip_code"]
+    tier1 = tier1.drop_duplicates(subset=dedupe_keys, keep="first")
 
     out = gdf.copy()
-    out["zipcode"] = out["zipcode"].astype(str).str.zfill(5)
+    out["zipcode"] = out["zipcode"].map(_norm_zip5)
     out["state"] = out["state"].astype(str).str.strip()
-    out["state_key"] = out["state"].str.lower()
+    _state_map = {
+        "al": "alabama",
+        "fl": "florida",
+        "ga": "georgia",
+        "alabama": "alabama",
+        "florida": "florida",
+        "georgia": "georgia",
+    }
+    out["state_key"] = out["state"].str.lower().map(lambda s: _state_map.get(s, s))
+
+    base_cols = [c for c in tier1.columns if c not in ("zip_code", "state_name", "state_key")]
+    exact = None
+    if "state_name" in tier1.columns:
+        # First pass: exact ZIP + normalized state match.
+        exact = out.merge(
+            tier1,
+            how="left",
+            left_on=["zipcode", "state_key"],
+            right_on=["zip_code", "state_key"],
+            suffixes=("", "__t1_exact"),
+        )
+
+    # Second pass: ZIP-only fallback so every ZIP gets Tier 1 if available.
+    zip_only = tier1.drop_duplicates(subset=["zip_code"], keep="first")
     merged = out.merge(
-        tier1,
+        zip_only,
         how="left",
-        left_on=["zipcode", "state_key"],
-        right_on=["zip_code", "state_key"],
-        suffixes=("", "__t1"),
+        left_on="zipcode",
+        right_on="zip_code",
+        suffixes=("", "__t1_zip"),
     )
 
-    for col in tier1.columns:
-        if col in ("zip_code", "state_name", "state_key"):
-            continue
-        t1_col = f"{col}__t1"
-        if t1_col in merged.columns:
-            if col in merged.columns:
-                merged[col] = merged[t1_col].combine_first(merged[col])
-            else:
-                merged[col] = merged[t1_col]
-            merged.drop(columns=[t1_col], inplace=True, errors="ignore")
+    # Overlay exact-match values first, then ZIP fallback, then original.
+    for col in base_cols:
+        zip_col = f"{col}__t1_zip"
+        exact_col = f"{col}__t1_exact"
+        if col not in merged.columns:
+            merged[col] = pd.NA
+        if exact is not None and exact_col in exact.columns:
+            merged[col] = exact[exact_col].combine_first(merged[col])
+        if zip_col in merged.columns:
+            merged[col] = merged[col].combine_first(merged[zip_col])
+            merged.drop(columns=[zip_col], inplace=True, errors="ignore")
 
+    # Drop temporary merge helper columns.
+    for c in (
+        "zip_code",
+        "zip_code__t1_zip",
+        "state_key",
+        "state_name",
+    ):
+        merged.drop(columns=[c], inplace=True, errors="ignore")
+
+    states_present = []
+    if "state_name" in tier1.columns:
+        states_present = sorted(
+            s for s in tier1["state_name"].dropna().astype(str).str.strip().unique().tolist() if s
+        )
+    else:
+        matched_states = merged.loc[merged["zipcode"].notna(), "state"].dropna().astype(str).str.strip()
+        states_present = sorted(s for s in matched_states.unique().tolist() if s)
+
+    print(f"  Tier 1 source: {_TIER1_PARQUET_PATH}")
+    print(f"  Tier 1 states from ZIP records: {states_present if states_present else 'none detected'}")
     return merged
 
 
