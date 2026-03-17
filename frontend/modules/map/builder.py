@@ -6,7 +6,7 @@ import numpy as np
 import folium
 import pandas as pd
 import geopandas as gpd
-from config import COLORMAP, WWW_DIR
+from frontend.config import COLORMAP, WWW_DIR
 
 _STATE_ABBR = {
     "Alabama": "AL",

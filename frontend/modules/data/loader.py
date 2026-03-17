@@ -3,7 +3,7 @@ import sys
 import re
 import pandas as pd
 import geopandas as gpd
-from config import DATA_PATH, ENTITIES_PATH, BACKEND_DIR
+from frontend.config import DATA_PATH, ENTITIES_PATH, BACKEND_DIR
 
 _DEFAULT_STATES = {"Florida", "Georgia", "Alabama"}
 _TIER1_PARQUET_PATH = os.path.join(

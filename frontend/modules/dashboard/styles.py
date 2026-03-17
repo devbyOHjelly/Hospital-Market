@@ -810,6 +810,28 @@ button[data-testid="collapsedControl"] { display:none !important; }
     margin: 0;
     padding: 0 0 2px;
 }
+.settings-construct-mini-title {
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: #ffffff;
+    margin: 6px 0 8px;
+    letter-spacing: 0.01em;
+}
+.settings-construct-group {
+    display: grid;
+    gap: 6px;
+    margin-bottom: 22px;
+}
+.settings-construct-group:last-child {
+    margin-bottom: 0;
+}
+.settings-construct-group .settings-tier-dropdown {
+    margin-top: 0 !important;
+    margin-bottom: 2px;
+}
+.settings-construct-group .settings-tier-dropdown:last-child {
+    margin-bottom: 0;
+}
 .settings-head .btn {
     background: #ff7f00 !important;
     border: 1px solid #ff7f00 !important;
@@ -1038,8 +1060,8 @@ button[data-testid="collapsedControl"] { display:none !important; }
     border-radius: 0;
     display: flex;
     flex-direction: column;
-    /* Responsive height: grows with viewport, bounded for very small/large screens */
-    height: clamp(460px, 68vh, 760px);
+    /* Responsive height: slightly taller on laptops, scales on larger monitors */
+    height: clamp(520px, 72vh, 920px);
     overflow: hidden;
 }
 .agent-thread-wrap {
@@ -1832,6 +1854,17 @@ iframe { border-radius:0; }
 .settings-option-stack .settings-option-info {
     margin-bottom: 12px !important;
 }
+.settings-option-stack .settings-option-formula {
+    margin-bottom: 10px !important;
+    color: #ffffff !important;
+}
+.settings-equation {
+    font-family: "Segoe UI", "Open Sans", Arial, sans-serif !important;
+    line-height: 1.35 !important;
+}
+.settings-equation-line {
+    margin: 2px 0 !important;
+}
 .settings-tier-component-card .control-label,
 .settings-tier-component-card .form-label,
 .settings-tier-component-card label {
@@ -1896,6 +1929,29 @@ iframe { border-radius:0; }
     border-radius: 0 !important;
     background: #000000 !important;
     box-shadow: none !important;
+}
+
+/* References -> Construct Score spacing */
+.def-construct-score-group {
+    margin-bottom: 20px;
+    border: 1px solid #ffffff;
+    border-radius: 0;
+    padding: 10px 12px;
+    background: #000000;
+}
+.def-construct-score-group:last-child {
+    margin-bottom: 0;
+}
+.def-construct-score-group .def-dim {
+    margin-bottom: 8px;
+}
+.def-construct-score-group .def-formula-row {
+    margin-bottom: 8px;
+}
+.def-construct-score-group .def-construct-tier-line {
+    margin-bottom: 8px;
+    font-size: 0.72rem;
+    line-height: 1.4;
 }
 
 /* Keep Settings title as active orange in dark-theme global overrides */

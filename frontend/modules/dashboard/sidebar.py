@@ -1,6 +1,6 @@
 import html
 import pandas as pd
-from config import COLORMAP
+from frontend.config import COLORMAP
 
 MAX_SELECTED = 10
 
@@ -72,181 +72,32 @@ def _clip_norm(value, lo, hi, invert=False):
     return r * 100.0
 
 
-def _market_framework_html(selected: list[dict]) -> str:
+def _market_framework_html(
+    selected: list[dict],
+    selected_option: str = "attractiveness_score_opt2",
+    tier_weights: dict | None = None,
+) -> str:
     """Framework chart for market-average view (single dynamic bubble)."""
     if not selected:
         return ""
-    if len(selected) == 1:
-        s = max(0.0, min(100.0, _safe_float(selected[0].get("hospital_potential"), 50.0)))
-        attr = ability = ripe = econ = s
-    else:
-        tier1_numeric_fields = [
-            "total_population",
-            "population_growth_rate_2yr",
-            "net_population_change_2yr",
-            "population_growth_5yr_pct",
-            "age_0_17",
-            "age_18_44",
-            "age_45_64",
-            "age_65_plus",
-            "age_0_17_pct",
-            "age_18_44_pct",
-            "age_45_64_pct",
-            "age_65_plus_pct",
-            "median_age",
-            "white_alone",
-            "black_alone",
-            "asian_alone",
-            "hispanic_latino",
-            "white_pct",
-            "black_pct",
-            "asian_pct",
-            "hispanic_pct",
-            "pct_white",
-            "pct_black",
-            "pct_asian",
-            "pct_hispanic",
-            "median_household_income",
-            "bachelors_or_higher",
-            "bachelors_or_higher_pct",
-            "birth_rate_per_1000",
-            "in_migration_from_other_state",
-            "in_migration_rate",
-            "in_migration_pct",
-            "unemployed",
-            "unemployment_rate",
-            "per_capita_income",
-            "per_capita_income_growth_2yr",
-            "top_industry_employment",
-            "industry_agriculture",
-            "industry_construction",
-            "industry_manufacturing",
-            "industry_retail",
-            "industry_finance",
-            "industry_professional_tech",
-            "industry_education_and_health",
-            "industry_arts_entertainment",
-            "industry_other_services",
-            "industry_public_administration",
-            "county_level_gdp_thousands",
-            "county_level_gdp_growth_5yr",
-            "msa_level_gdp_millions",
-            "msa_gdp_growth_5yr",
-            "pct_under_18",
-            "pct_18_44",
-            "pct_45_64",
-            "pct_18_64",
-            "pct_65_plus",
-        ]
-        available_tier1 = [c for c in tier1_numeric_fields if any(c in z for z in selected)]
-
-        dim_rules = {
-            "attractiveness": {
-                "keywords": (
-                    "growth",
-                    "income",
-                    "migration",
-                    "bachelors",
-                    "gdp",
-                    "birth",
-                    "unemploy",
-                ),
-                "invert_keywords": ("unemploy",),
-            },
-            "ability_to_win": {
-                "keywords": (
-                    "industry",
-                    "employment",
-                    "18_44",
-                    "45_64",
-                    "18_64",
-                    "bachelors",
-                ),
-                "invert_keywords": (),
-            },
-            "ripeness": {
-                "keywords": (
-                    "65_plus",
-                    "median_age",
-                    "hispanic",
-                    "black",
-                    "asian",
-                    "white",
-                    "pct_",
-                ),
-                "invert_keywords": (),
-            },
-            "economic_significance": {
-                "keywords": (
-                    "total_population",
-                    "gdp",
-                    "employment",
-                    "count",
-                    "income",
-                    "age_",
-                ),
-                "invert_keywords": (),
-            },
-        }
-        dim_cols = {k: [] for k in dim_rules}
-        leftovers = []
-        for col in available_tier1:
-            col_l = col.lower()
-            best_dim = None
-            best_score = 0
-            for dim, cfg in dim_rules.items():
-                score = sum(1 for kw in cfg["keywords"] if kw in col_l)
-                if score > best_score:
-                    best_score = score
-                    best_dim = dim
-            if best_dim and best_score > 0:
-                invert = any(kw in col_l for kw in dim_rules[best_dim]["invert_keywords"])
-                dim_cols[best_dim].append((col, invert))
-            else:
-                leftovers.append(col)
-        dim_cycle = list(dim_cols.keys())
-        for i, col in enumerate(leftovers):
-            dim_cols[dim_cycle[i % len(dim_cycle)]].append((col, False))
-
-        def _norm_series(col, invert=False):
-            raw = pd.to_numeric(pd.Series([z.get(col) for z in selected]), errors="coerce")
-            valid = raw.dropna()
-            if len(valid) == 0:
-                return None
-            mn, mx = valid.min(), valid.max()
-            if mx <= mn:
-                out = pd.Series([50.0] * len(raw))
-            else:
-                out = (raw - mn) / (mx - mn) * 100.0
-            if invert:
-                out = 100.0 - out
-            return out.fillna(50.0)
-
-        def _compose(cols):
-            parts = []
-            for col, invert in cols:
-                v = _norm_series(col, invert=invert)
-                if v is not None:
-                    parts.append(v)
-            if not parts:
-                return None
-            return float((sum(parts) / len(parts)).mean())
-
-        fallback = float(
-            pd.to_numeric(
-                pd.Series([z.get("hospital_potential") for z in selected]), errors="coerce"
-            )
-            .fillna(0)
-            .mean()
+    option_col = str(selected_option or "").strip() or "attractiveness_score_opt2"
+    option_scores = pd.to_numeric(
+        pd.Series([z.get(option_col) for z in selected]),
+        errors="coerce",
+    )
+    if not option_scores.notna().any():
+        option_scores = pd.to_numeric(
+            pd.Series([z.get("hospital_potential") for z in selected]),
+            errors="coerce",
         )
-        attr = _compose(dim_cols["attractiveness"])
-        ability = _compose(dim_cols["ability_to_win"])
-        ripe = _compose(dim_cols["ripeness"])
-        econ = _compose(dim_cols["economic_significance"])
-        attr = fallback if attr is None else attr
-        ability = fallback if ability is None else ability
-        ripe = fallback if ripe is None else ripe
-        econ = fallback if econ is None else econ
+    attr_base = float(option_scores.fillna(0).mean()) if option_scores.notna().any() else 0.0
+    tw = tier_weights or {}
+    tier1_scale = max(0.0, min(1.0, _safe_float(tw.get("tier1", 100.0), 100.0) / 100.0))
+    attr = max(0.0, min(100.0, attr_base * tier1_scale))
+    # Tier 2/3 are currently blank/no-data in app settings; keep these low.
+    ability = 0.0
+    ripe = 0.0
+    econ = 0.0
 
     w, h = 360, 268
     ml, mr, mt, mb = 44, 14, 16, 54
@@ -274,9 +125,13 @@ def _market_framework_html(selected: list[dict]) -> str:
     r = 5.5 + (max(0.0, min(100.0, econ)) / 100.0) * 12.5
     cx, cy = _x(ability), _y(attr)
 
-    # Link bubble color to computed construct formula so color changes with data.
-    formula_score = max(0.0, min(100.0, (attr + ability + ripe + econ) / 4.0))
-    bubble_fill = COLORMAP(formula_score)
+    # Color reflects ripeness. With no Tier-2/3 data, keep low-ripeness red.
+    if ripe >= 67:
+        bubble_fill = "#22c55e"
+    elif ripe >= 34:
+        bubble_fill = "#f59e0b"
+    else:
+        bubble_fill = "#ef4444"
     bubble_stroke = "#000000"
 
     svg = (
@@ -510,7 +365,12 @@ def _build_tier2_rows_single(zd, _fmt_fn):
     return rows
 
 
-def market_tab_html(selected: list[dict], entities_df=None) -> str:
+def market_tab_html(
+    selected: list[dict],
+    entities_df=None,
+    selected_option: str = "attractiveness_score_opt2",
+    tier_weights: dict | None = None,
+) -> str:
     """Render the Market tab with aggregate metrics + per-ZIP entity detail."""
     count = len(selected)
 
@@ -557,14 +417,14 @@ def market_tab_html(selected: list[dict], entities_df=None) -> str:
 
     score_box = (
         f'<div class="market-detail-block">'
-        f"{_market_framework_html(selected)}"
+        f"{_market_framework_html(selected, selected_option=selected_option, tier_weights=tier_weights)}"
         f'<div style="text-align:center;padding:6px 10px;">'
         f'<div style="font-size:0.6rem;color:#1a1a1a;">Average Market Score</div>'
         f'<div class="market-score-value" style="--ms-color:{avg_color};font-size:1.4rem;font-weight:800;line-height:1.2;">'
         f"{avg_score:.1f}</div>"
         f'<div style="font-size:0.6rem;color:#1a1a1a;">out of 100</div></div>'
         f'<div class="market-detail-content" style="border-top:none;">'
-        f'<table style="width:100%;font-size:0.7rem;border-collapse:collapse;">'
+        f'<table style="width:100%;font-size:0.7rem;border-collapse:collapse;table-layout:fixed;">'
     )
 
     score_box += _row("Total Entities", f"{total_ent:,}")
@@ -760,6 +620,7 @@ def market_tab_html(selected: list[dict], entities_df=None) -> str:
         excluded = {
             "type",
             "action",
+            "geometry",
             "zipcode",
             "zip_code",
             "zip",
@@ -772,6 +633,9 @@ def market_tab_html(selected: list[dict], entities_df=None) -> str:
             "avg_entity_score",
             "avg_confidence",
             "hospital_potential",
+            "tier1",
+            "tier2",
+            "tier3",
         }
         if k in excluded:
             return False
@@ -857,18 +721,13 @@ def market_tab_html(selected: list[dict], entities_df=None) -> str:
             f'<details class="tier-dropdown" data-tier="{tid}"{open_attr}>'
             f'<summary class="tier-dropdown-summary">{title}</summary>'
             f'<div class="tier-dropdown-content">'
-            f'<table style="width:100%;font-size:0.7rem;border-collapse:collapse;">'
+            f'<table style="width:100%;font-size:0.7rem;border-collapse:collapse;table-layout:fixed;">'
         )
         for label, val in rows:
             html += _row(label, val)
         html += "</table></div></details>"
         return html
 
-    tier1_html = _tier_dropdown("Tier 1", tier1_rows)
-    tier2_html = _tier_dropdown("Tier 2", [])
-    tier3_html = _tier_dropdown("Tier 3", [])
-
-    score_box += tier1_html + tier2_html + tier3_html
     score_box += "</div></div>"
 
     header = ""
@@ -987,7 +846,7 @@ def market_tab_html(selected: list[dict], entities_df=None) -> str:
             f'<span class="market-zip-remove chip-remove" data-zip="{zc}" title="Remove ZIP">&times;</span>'
             f"</summary>"
             f'<div class="zip-detail-content">'
-            f'<table style="width:100%;font-size:0.7rem;border-collapse:collapse;">'
+            f'<table style="width:100%;font-size:0.7rem;border-collapse:collapse;table-layout:fixed;">'
             f'{_row("Score", score_html, "#ffffff")}'
             f'{_row("Entities", f"{ent_count:,}")}'
             f'{_row("Hospitals", f"{hosp_count:,}", "#22c55e")}'
@@ -1030,9 +889,10 @@ def _section_header(title: str) -> str:
 
 def _row(label: str, value: str, color: str = "#1a1a1a") -> str:
     return (
-        f'<tr><td style="color:#1a1a1a;padding:3px 0;font-size:0.7rem;">{label}</td>'
+        f'<tr><td style="color:#1a1a1a;padding:3px 8px 3px 0;font-size:0.7rem;'
+        f'width:66%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{label}</td>'
         f'<td style="text-align:right;font-weight:600;color:{color};padding:3px 0;'
-        f'font-size:0.7rem;">{value}</td></tr>'
+        f'font-size:0.7rem;width:34%;white-space:nowrap;">{value}</td></tr>'
     )
 
 

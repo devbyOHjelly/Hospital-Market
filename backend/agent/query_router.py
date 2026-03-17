@@ -9,6 +9,7 @@ from .agent_config import (
     DEFAULT_SCORE_OPTION,
     EXECUTIVE_FOLLOWUPS,
     OPTION_ALIASES,
+    RAW_TO_PCTILE,
     SCORE_DEFINITIONS,
     WHATIF_KEYWORDS,
 )
@@ -104,10 +105,87 @@ def _ensure_score_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _state_from_question(q: str) -> str | None:
+    # Backwards-compatible shim; prefer _state_from_question_dynamic which uses the dataset.
     for s in ("alabama", "florida", "georgia"):
         if s in q:
             return s.title()
     return None
+
+
+def _state_from_question_dynamic(df: pd.DataFrame, q: str) -> str | None:
+    """
+    Try to detect a state mentioned in the question, using the dataset's own state values.
+    This supports all states present in the data (not just AL/FL/GA).
+    """
+    ql = (q or "").lower()
+    if not ql:
+        return None
+    state_col = None
+    for c in ("state_name", "state"):
+        if c in df.columns:
+            state_col = c
+            break
+    if not state_col:
+        return None
+    try:
+        vals = (
+            df[state_col]
+            .dropna()
+            .astype(str)
+            .str.strip()
+            .replace("", pd.NA)
+            .dropna()
+            .unique()
+            .tolist()
+        )
+    except Exception:
+        return None
+    # Prefer longest names first to avoid partial matches (e.g. "New York" vs "York").
+    vals = sorted({v for v in vals if v}, key=lambda x: len(x), reverse=True)
+    for v in vals:
+        if v.lower() in ql:
+            return v
+    # Fall back to earlier hard-coded approach for safety.
+    return _state_from_question(ql)
+
+
+def _resolve_score_component_column(df: pd.DataFrame, comp_col: str) -> str | None:
+    """
+    Resolve which column to use for a score component. Prefer the configured percentile column,
+    but allow raw columns when percentiles are missing and we can map raw->pctile.
+    """
+    if comp_col in df.columns:
+        return comp_col
+    # If the definition references a raw column, map it to its pctile column when available.
+    mapped = RAW_TO_PCTILE.get(comp_col)
+    if mapped and mapped in df.columns:
+        return mapped
+    return None
+
+
+def _format_pct(v: Any) -> str:
+    try:
+        x = float(pd.to_numeric(v, errors="coerce"))
+        if pd.isna(x):
+            return "N/A"
+        # Many of these are 0-100 style percentiles; display as-is.
+        return f"{x:.1f}"
+    except Exception:
+        return "N/A"
+
+
+def _rank_position_desc(values: pd.Series, idx: Any) -> int | None:
+    """1 = highest. Ties share rank via dense ranking."""
+    try:
+        s = pd.to_numeric(values, errors="coerce")
+        if idx not in s.index:
+            return None
+        if pd.isna(s.loc[idx]):
+            return None
+        ranks = s.rank(ascending=False, method="dense")
+        return int(ranks.loc[idx])
+    except Exception:
+        return None
 
 
 def _msa_weighted_scores(df: pd.DataFrame, score_col: str) -> pd.DataFrame:
@@ -485,6 +563,11 @@ def _handle_comparison(df: pd.DataFrame, q: str) -> str | None:
         grouped = _msa_weighted_scores(df, score_col)
         if len(grouped) == 0:
             return None
+        st = _state_from_question_dynamic(df, q)
+        if st and "state" in grouped.columns:
+            grouped = grouped[grouped["state"].astype(str).str.lower() == st.lower()].copy()
+            if len(grouped) == 0:
+                return f"No MSA rows are available for {st} in the dashboard data."
         m_vs = re.search(r"(.+?)\s+(?:vs|versus)\s+(.+)", q, flags=re.IGNORECASE)
         m_cmp = re.search(r"compare\s+(.+?)\s+and\s+(.+)", q, flags=re.IGNORECASE)
         if m_vs:
@@ -500,75 +583,150 @@ def _handle_comparison(df: pd.DataFrame, q: str) -> str | None:
             b_val = float(grouped[grouped["msa_name"] == b_name][score_col].iloc[0])
             better = a_name if a_val >= b_val else b_name
             diff = abs(a_val - b_val)
+            # Rank positions within the same scope.
+            ranks = pd.to_numeric(grouped[score_col], errors="coerce").rank(ascending=False, method="dense")
+            a_rank = int(ranks[grouped["msa_name"] == a_name].iloc[0]) if (grouped["msa_name"] == a_name).any() else None
+            b_rank = int(ranks[grouped["msa_name"] == b_name].iloc[0]) if (grouped["msa_name"] == b_name).any() else None
             return _render_structured_response(
                 headline=f"{better} scores higher by {diff:.2f} points on {score_col}.",
                 bullets=[
-                    f"{a_name}: {a_val:.2f}",
-                    f"{b_name}: {b_val:.2f}",
-                    "Comparison method: population-weighted MSA average.",
+                    f"{a_name}: {a_val:.2f}" + (f" (rank {a_rank})" if a_rank else ""),
+                    f"{b_name}: {b_val:.2f}" + (f" (rank {b_rank})" if b_rank else ""),
+                    "Comparison method: population-weighted MSA average computed from ZIP rows.",
+                    f"Scope: {st if st else 'all available states in dataset'}.",
                 ],
                 implication="The higher-scoring market is the better short-list candidate under the selected scoring option.",
             )
 
+    # ZIP comparison: prefer attractiveness when requested; otherwise default to hospital_potential.
     if "zipcode" not in df.columns and "zip" not in q:
         return None
-
     zips = re.findall(r"\b\d{5}\b", q)
     if len(zips) < 2:
         return None
     z1, z2 = _normalize_zip(zips[0]), _normalize_zip(zips[1])
-    if "zipcode" not in df.columns or "hospital_potential" not in df.columns:
+    if "zipcode" not in df.columns:
         return None
-    w = df.copy()
+
+    st = _state_from_question_dynamic(df, q)
+    scoped = df
+    if st:
+        for c in ("state_name", "state"):
+            if c in df.columns:
+                scoped = df[df[c].astype(str).str.lower() == st.lower()].copy()
+                break
+        if len(scoped) == 0:
+            return f"No ZIP rows are available for {st} in the dashboard data."
+
+    wants_attractiveness = ("attractiveness" in q) or any(alias in q for alias in OPTION_ALIASES.keys())
+    if wants_attractiveness:
+        score_col = _score_column_for_question(scoped, q)
+        if score_col not in scoped.columns:
+            return None
+        metric_col = score_col
+        metric_label = score_col
+    else:
+        if "hospital_potential" not in scoped.columns:
+            return None
+        metric_col = "hospital_potential"
+        metric_label = "hospital_potential"
+
+    w = scoped.copy()
     w["zip_key"] = w["zipcode"].map(_normalize_zip)
-    rows = w[w["zip_key"].isin([z1, z2])]
-    if len(rows) < 2:
+    rows = w[w["zip_key"].isin([z1, z2])].copy()
+    if len(rows) == 0:
         return None
-    a = float(pd.to_numeric(rows[rows["zip_key"] == z1]["hospital_potential"], errors="coerce").mean())
-    b = float(pd.to_numeric(rows[rows["zip_key"] == z2]["hospital_potential"], errors="coerce").mean())
+
+    # ZIPs can appear multiple times; compare on mean.
+    a = float(pd.to_numeric(rows[rows["zip_key"] == z1][metric_col], errors="coerce").mean())
+    b = float(pd.to_numeric(rows[rows["zip_key"] == z2][metric_col], errors="coerce").mean())
+    if pd.isna(a) or pd.isna(b):
+        return None
     better = z1 if a >= b else z2
     diff = abs(a - b)
+
+    # Rank each ZIP within scope (dense rank, 1=best).
+    zip_scores = (
+        w.groupby("zip_key", dropna=True)[metric_col]
+        .apply(lambda s: pd.to_numeric(s, errors="coerce").mean())
+    )
+    a_rank = _rank_position_desc(zip_scores, z1)
+    b_rank = _rank_position_desc(zip_scores, z2)
+
     return _render_structured_response(
-        headline=f"ZIP {better} has the higher market score by {diff:.2f} points.",
+        headline=f"ZIP {better} is higher by {diff:.2f} points on {metric_label}.",
         bullets=[
-            f"ZIP {z1}: {a:.2f}",
-            f"ZIP {z2}: {b:.2f}",
-            "Metric used: hospital_potential.",
+            f"ZIP {z1}: {a:.2f}" + (f" (rank {a_rank})" if a_rank else ""),
+            f"ZIP {z2}: {b:.2f}" + (f" (rank {b_rank})" if b_rank else ""),
+            f"Scope: {st if st else 'all available states in dataset'}.",
+            "ZIP metric is computed as the mean across dataset rows for that ZIP.",
         ],
-        implication="The higher-scoring ZIP is the stronger immediate target for local growth planning.",
+        implication="The higher-scoring ZIP is the stronger candidate under the selected comparison metric.",
     )
 
 
 def _handle_explanation(df: pd.DataFrame, q: str) -> str | None:
     if not any(k in q for k in ("why", "what makes", "explain", "reason", "factor", "drive", "cause")):
         return None
-    if "highest attractiveness" in q or "highest" in q:
+    if "highest attractiveness" in q or "highest" in q or ("highest ranking" in q):
+        # Explanation is primarily used in the notebook for "top ZIP under option X, and why".
         score_col = _score_column_for_question(df, q)
-        s = pd.to_numeric(df.get(score_col), errors="coerce")
+        if score_col not in df.columns:
+            return None
+        scoped = df
+        st = _state_from_question_dynamic(df, q)
+        if st:
+            for c in ("state_name", "state"):
+                if c in df.columns:
+                    scoped = df[df[c].astype(str).str.lower() == st.lower()].copy()
+                    break
+            if len(scoped) == 0:
+                return f"No rows are available for {st} in the dashboard data."
+
+        s = pd.to_numeric(scoped.get(score_col), errors="coerce")
         if not s.notna().any():
             return None
         idx = s.idxmax()
-        z = _normalize_zip(df.loc[idx, "zipcode"]) if "zipcode" in df.columns else "N/A"
-        signals = []
-        for c in ("population_growth_rate_2yr", "median_household_income", "bachelors_or_higher_pct"):
-            if c in df.columns:
-                v = pd.to_numeric(df.loc[idx, c], errors="coerce")
-                if pd.notna(v):
-                    signals.append(f"{c}={float(v):.2f}")
-        components = SCORE_DEFINITIONS.get(score_col, {}).get("components", {})
-        weight_text = ", ".join(
-            f"{meta.get('label', col)} {float(meta.get('weight', 0.0)) * 100:.0f}%"
-            for col, meta in components.items()
+        z = _normalize_zip(scoped.loc[idx, "zipcode"]) if "zipcode" in scoped.columns else "N/A"
+        top_score = float(s.loc[idx])
+
+        # Build factor bullets like the notebook demo: component percentile vs dataset average.
+        comp_defs = SCORE_DEFINITIONS.get(score_col, {}).get("components", {}) or {}
+        comp_bullets: list[str] = []
+        weakest = None
+        weakest_delta = None
+        for comp_col, meta in comp_defs.items():
+            resolved_col = _resolve_score_component_column(scoped, comp_col)
+            if not resolved_col:
+                continue
+            w = float(meta.get("weight", 0.0))
+            label = str(meta.get("label", resolved_col)).strip() or resolved_col
+            val = pd.to_numeric(scoped.loc[idx, resolved_col], errors="coerce")
+            avg = pd.to_numeric(scoped[resolved_col], errors="coerce").mean()
+            if pd.isna(val) or pd.isna(avg):
+                continue
+            delta = float(val - avg)
+            if (weakest_delta is None) or (delta < weakest_delta):
+                weakest_delta = delta
+                weakest = label
+            comp_bullets.append(
+                f"**{label} ({w * 100:.0f}% weight):** {z} is at {_format_pct(val)} vs dataset average {_format_pct(avg)}; delta {delta:+.1f}."
+            )
+
+        option_label = _extract_option_label(score_col)
+        headline = (
+            f"Under {option_label}, ZIP {z}{(' in ' + st) if st else ''} ranks highest with an attractiveness score of {top_score:.1f}."
         )
-        extra = "; ".join(signals[:3]) if signals else "multiple favorable Tier 1 factors"
+        bullets = []
+        bullets.extend(comp_bullets[:5] if comp_bullets else [f"Score column used: {score_col}."])
+        if weakest and weakest_delta is not None:
+            bullets.append(f"Weakest relative contributor: {weakest} (delta {weakest_delta:+.1f} vs average).")
+        bullets.append(f"Scope: {st if st else 'all available states in dataset'}.")
+
         return _render_structured_response(
-            headline=f"ZIP {z} leads because it scores strongest on the weighted factors used by {score_col}.",
-            bullets=[
-                f"Key observed signals: {extra}.",
-                f"Configured factor weights: {weight_text}.",
-                "Higher-ranked component percentiles compound into a higher composite attractiveness score.",
-            ],
-            implication="The winning ZIP should be validated with competitive intensity and access constraints before final prioritization.",
+            headline=headline,
+            bullets=bullets,
+            implication="This market leads primarily because the highest-weighted factors are materially above the dataset baseline; validate execution feasibility before prioritization.",
         )
     return None
 
