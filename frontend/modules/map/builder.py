@@ -1109,7 +1109,7 @@ def _inject_legend(m: folium.Map) -> None:
         'font-family:\'Open Sans\',\'Segoe UI\',Tahoma,Arial,sans-serif;">'
         '<div style="text-align:center;color:#ffffff;font-size:0.92rem;font-weight:600;'
         'letter-spacing:0.02em;text-transform:none;margin-bottom:4px;">'
-        "Market Score</div>"
+        "ZIP Score</div>"
         '<div style="display:flex;align-items:center;gap:10px;">'
         '<span style="color:#ffffff;font-size:0.76rem;font-weight:600;letter-spacing:0.02em;'
         'text-transform:uppercase;">Low</span>'

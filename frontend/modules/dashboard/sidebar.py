@@ -61,6 +61,46 @@ def _safe_float(val, default=0.0):
         return default
 
 
+def _weighted_avg_from_selected(
+    selected: list[dict],
+    key: str,
+    weight_key: str = "total_population",
+) -> float | None:
+    vals = []
+    for z in selected:
+        v = pd.to_numeric(pd.Series([z.get(key)]), errors="coerce").iloc[0]
+        if pd.notna(v):
+            vals.append(float(v))
+        else:
+            vals.append(None)
+    if not vals:
+        return None
+
+    weights = []
+    for z in selected:
+        w = pd.to_numeric(pd.Series([z.get(weight_key)]), errors="coerce").iloc[0]
+        if pd.notna(w) and float(w) > 0:
+            weights.append(float(w))
+        else:
+            weights.append(0.0)
+
+    weighted_num = 0.0
+    weighted_den = 0.0
+    for v, w in zip(vals, weights):
+        if v is None:
+            continue
+        if w > 0:
+            weighted_num += v * w
+            weighted_den += w
+    if weighted_den > 0:
+        return weighted_num / weighted_den
+
+    plain = [v for v in vals if v is not None]
+    if not plain:
+        return None
+    return sum(plain) / len(plain)
+
+
 def _clip_norm(value, lo, hi, invert=False):
     v = _safe_float(value)
     if hi <= lo:
@@ -81,23 +121,31 @@ def _market_framework_html(
     if not selected:
         return ""
     option_col = str(selected_option or "").strip() or "attractiveness_score_opt2"
-    option_scores = pd.to_numeric(
-        pd.Series([z.get(option_col) for z in selected]),
-        errors="coerce",
-    )
-    if not option_scores.notna().any():
-        option_scores = pd.to_numeric(
-            pd.Series([z.get("hospital_potential") for z in selected]),
-            errors="coerce",
-        )
-    attr_base = float(option_scores.fillna(0).mean()) if option_scores.notna().any() else 0.0
-    tw = tier_weights or {}
-    tier1_scale = max(0.0, min(1.0, _safe_float(tw.get("tier1", 100.0), 100.0) / 100.0))
-    attr = max(0.0, min(100.0, attr_base * tier1_scale))
-    # Tier 2/3 are currently blank/no-data in app settings; keep these low.
-    ability = 0.0
-    ripe = 0.0
-    econ = 0.0
+    opt_suffix = option_col.split("_")[-1] if "_" in option_col else "opt2"
+    if opt_suffix not in {"opt1", "opt2", "opt4"}:
+        opt_suffix = "opt2"
+
+    attr = _weighted_avg_from_selected(selected, "attractiveness")
+    ability = _weighted_avg_from_selected(selected, "ability_to_win")
+    ripe = _weighted_avg_from_selected(selected, "ripeness")
+    econ = _weighted_avg_from_selected(selected, "economic_significance")
+
+    # Fallback to option-specific columns if normalized construct aliases are absent.
+    if attr is None:
+        attr = _weighted_avg_from_selected(selected, f"attractiveness_score_{opt_suffix}")
+    if ability is None:
+        ability = _weighted_avg_from_selected(selected, f"win_score_{opt_suffix}")
+    if ripe is None:
+        ripe = _weighted_avg_from_selected(selected, f"strength_score_{opt_suffix}")
+    if econ is None:
+        econ = _weighted_avg_from_selected(selected, f"rightness_score_{opt_suffix}")
+
+    # Final fallback to market score if any construct is missing.
+    market_fallback = _weighted_avg_from_selected(selected, "hospital_potential")
+    attr = float(attr if attr is not None else (market_fallback or 0.0))
+    ability = float(ability if ability is not None else (market_fallback or 0.0))
+    ripe = float(ripe if ripe is not None else (market_fallback or 0.0))
+    econ = float(econ if econ is not None else (market_fallback or 0.0))
 
     w, h = 360, 268
     ml, mr, mt, mb = 44, 14, 16, 54
@@ -380,8 +428,9 @@ def market_tab_html(
             "Click a ZIP CODE on the map to add it here</p>"
         )
 
-    scores = [float(z.get("hospital_potential", 0)) for z in selected]
-    avg_score = sum(scores) / count
+    avg_score = _weighted_avg_from_selected(selected, "hospital_potential")
+    if avg_score is None:
+        avg_score = 0.0
     avg_color = COLORMAP(avg_score)
 
     total_ent = sum(int(z.get("entity_count", 0)) for z in selected)
@@ -428,9 +477,7 @@ def market_tab_html(
     )
 
     score_box += _row("Total Entities", f"{total_ent:,}")
-    score_box += _row("Total Hospitals", f"{total_hosp:,}", "#22c55e")
     score_box += _row("Average Entities/ZIP", f"{avg_ent:.1f}")
-    score_box += _row("Average Hospitals/ZIP", f"{avg_hosp:.1f}")
 
     score_box += "</table>"
     score_box += '<div style="margin-top:8px;"></div>'
@@ -745,6 +792,25 @@ def market_tab_html(
         zt2 = _tier_dropdown("Tier 2", [])
         zt3 = _tier_dropdown("Tier 3", [])
 
+        opt_suffix = str(selected_option or "").strip().split("_")[-1] if selected_option else "opt2"
+        if opt_suffix not in {"opt1", "opt2", "opt4"}:
+            opt_suffix = "opt2"
+
+        def _score_for(row: dict, base: str, fallback: str | None = None):
+            v = pd.to_numeric(pd.Series([row.get(base)]), errors="coerce").iloc[0]
+            if pd.notna(v):
+                return float(v)
+            if fallback:
+                vf = pd.to_numeric(pd.Series([row.get(fallback)]), errors="coerce").iloc[0]
+                if pd.notna(vf):
+                    return float(vf)
+            return None
+
+        z_attr = _score_for(zd, "attractiveness", f"attractiveness_score_{opt_suffix}")
+        z_ability = _score_for(zd, "ability_to_win", f"win_score_{opt_suffix}")
+        z_ripe = _score_for(zd, "ripeness", f"strength_score_{opt_suffix}")
+        z_econ = _score_for(zd, "economic_significance", f"rightness_score_{opt_suffix}")
+
         hosp_content = ""
         if entities_df is not None and len(entities_df) > 0:
             zip_ents = entities_df[
@@ -848,6 +914,10 @@ def market_tab_html(
             f'<div class="zip-detail-content">'
             f'<table style="width:100%;font-size:0.7rem;border-collapse:collapse;table-layout:fixed;">'
             f'{_row("Score", score_html, "#ffffff")}'
+            f'{_row("Attractiveness", (f"{z_attr:.1f}" if z_attr is not None else na))}'
+            f'{_row("Ability to Succeed", (f"{z_ability:.1f}" if z_ability is not None else na))}'
+            f'{_row("Ripeness", (f"{z_ripe:.1f}" if z_ripe is not None else na))}'
+            f'{_row("Economic Significance", (f"{z_econ:.1f}" if z_econ is not None else na))}'
             f'{_row("Entities", f"{ent_count:,}")}'
             f'{_row("Hospitals", f"{hosp_count:,}", "#22c55e")}'
             f"</table>"

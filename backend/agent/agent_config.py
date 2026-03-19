@@ -2,7 +2,7 @@ from __future__ import annotations
 
 # Centralized agent behavior/configuration for backend.agent.
 
-DEFAULT_MODEL = "databricks-claude-sonnet-4-6"
+DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct"
 CHAT_TEMPERATURE = 0.0
 CHAT_MAX_TOKENS = 420
 MAX_SELECTED_ROWS_JSON_CHARS = 4000

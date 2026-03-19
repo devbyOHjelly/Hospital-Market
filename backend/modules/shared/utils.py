@@ -1,8 +1,3 @@
-"""
-utils.py
-Text normalization helpers for entity resolution and transform.
-"""
-
 import re
 import unicodedata
 
@@ -31,7 +26,6 @@ US_STATE_ABBR = {
 
 ABBR_TO_STATE = {v: k for k, v in US_STATE_ABBR.items()}
 
-
 def normalize_text(s: str) -> str:
     if s is None:
         return ''
@@ -41,12 +35,10 @@ def normalize_text(s: str) -> str:
     s = re.sub(r'\s+', ' ', s).strip()
     return s
 
-
 def normalize_name(name: str) -> str:
     s = normalize_text(name)
     toks = [t for t in s.split() if t not in STOPWORDS]
     return ' '.join(toks)
-
 
 def normalize_zip(z) -> str:
     if z is None:
@@ -54,7 +46,6 @@ def normalize_zip(z) -> str:
     z = str(z).strip()
     m = re.match(r'^(\d{5})', z)
     return m.group(1) if m else ''
-
 
 def normalize_state(st) -> str:
     if st is None:

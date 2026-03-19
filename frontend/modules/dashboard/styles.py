@@ -1809,7 +1809,7 @@ iframe { border-radius:0; }
 }
 .settings-tier-details-body {
     border-top: none;
-    padding: 12px 16px 20px;
+    padding: 8px 10px 12px;
     border-radius: 0;
 }
 .settings-tier-details-body > * {
@@ -1828,7 +1828,7 @@ iframe { border-radius:0; }
     border-radius: 0 !important;
     background: transparent !important;
     padding: 2px 0 !important;
-    margin-bottom: 14px;
+    margin-bottom: 8px;
 }
 .settings-dim-card {
     border: none !important;
@@ -1869,20 +1869,52 @@ iframe { border-radius:0; }
 .settings-tier-component-card .form-label,
 .settings-tier-component-card label {
     margin-bottom: 2px !important;
+    font-family: "Open Sans", "Segoe UI", Tahoma, Arial, sans-serif !important;
+    font-size: 0.68rem !important;
+    font-weight: 600 !important;
+    color: #ffffff !important;
 }
 .settings-tier-component-card .irs--shiny {
-    margin-top: -2px !important;
+    margin-top: -6px !important;
+    margin-bottom: -2px !important;
 }
 .settings-tier-component-card .irs--shiny .irs-single,
 .settings-tier-component-card .irs--shiny .irs-from,
 .settings-tier-component-card .irs--shiny .irs-to {
-    font-size: 0.7rem !important;
-    top: 3px !important;
+    font-size: 0.66rem !important;
+    top: 1px !important;
     z-index: 3 !important;
 }
 .settings-tier-component-card .irs--shiny .irs-from,
 .settings-tier-component-card .irs--shiny .irs-to {
     display: none !important;
+}
+.settings-tier-component-card div,
+.settings-tier-component-card span,
+.settings-tier-component-card b {
+    font-family: "Open Sans", "Segoe UI", Tahoma, Arial, sans-serif !important;
+    font-size: 0.68rem !important;
+}
+.settings-construct-section {
+    border-top: 1px solid #ffffff;
+    padding-top: 18px;
+    margin-top: 22px;
+    margin-bottom: 18px;
+}
+.settings-construct-section .settings-construct-mini-title {
+    margin-bottom: 10px;
+}
+.settings-construct-section .settings-tier-dropdown {
+    margin-top: 0 !important;
+}
+.settings-construct-section .settings-tier-details-body {
+    /* Keep compact layout but avoid edge-clipping */
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+}
+.settings-construct-section .settings-tier-details-body > * {
+    margin-left: 2px !important;
+    margin-right: 2px !important;
 }
 .settings-tier-empty-body {
     min-height: 26px;

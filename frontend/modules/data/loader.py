@@ -6,9 +6,10 @@ import geopandas as gpd
 from frontend.config import DATA_PATH, ENTITIES_PATH, BACKEND_DIR
 
 _DEFAULT_STATES = {"Florida", "Georgia", "Alabama"}
-_TIER1_PARQUET_PATH = os.path.join(
-    BACKEND_DIR, "data", "raw", "tier1", "final_tier1_percentiles.parquet"
-)
+_TIER1_PARQUET_CANDIDATES = [
+    os.path.join(BACKEND_DIR, "data", "raw", "tier1", "final_tier1_all_percentiles.parquet"),
+    os.path.join(BACKEND_DIR, "data", "raw", "tier1", "final_tier1_percentiles.parquet"),
+]
 
 
 def _auto_build_gpkg(empty_mode: bool = False):
@@ -68,18 +69,22 @@ def _norm_zip5(v: object) -> str:
 
 def _merge_tier1_parquet(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """Overlay final Tier 1 parquet values onto map dataframe by ZIP/state."""
-    if not os.path.exists(_TIER1_PARQUET_PATH):
-        print(f"  Tier 1 parquet not found: {_TIER1_PARQUET_PATH}")
+    tier1_path = next((p for p in _TIER1_PARQUET_CANDIDATES if os.path.exists(p)), None)
+    if not tier1_path:
+        print(
+            "  Tier 1 parquet not found in candidates: "
+            + ", ".join(_TIER1_PARQUET_CANDIDATES)
+        )
         return gdf
 
     try:
-        tier1 = pd.read_parquet(_TIER1_PARQUET_PATH)
+        tier1 = pd.read_parquet(tier1_path)
     except Exception as e:
-        print(f"  Failed to read Tier 1 parquet ({_TIER1_PARQUET_PATH}): {e}")
+        print(f"  Failed to read Tier 1 parquet ({tier1_path}): {e}")
         return gdf
 
     if tier1 is None or tier1.empty:
-        print(f"  Tier 1 parquet is empty: {_TIER1_PARQUET_PATH}")
+        print(f"  Tier 1 parquet is empty: {tier1_path}")
         return gdf
 
     tier1 = tier1.copy()
@@ -199,7 +204,7 @@ def _merge_tier1_parquet(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         matched_states = merged.loc[merged["zipcode"].notna(), "state"].dropna().astype(str).str.strip()
         states_present = sorted(s for s in matched_states.unique().tolist() if s)
 
-    print(f"  Tier 1 source: {_TIER1_PARQUET_PATH}")
+    print(f"  Tier 1 source: {tier1_path}")
     print(f"  Tier 1 states from ZIP records: {states_present if states_present else 'none detected'}")
     return merged
 

@@ -509,10 +509,11 @@ def _handle_surface_query(df: pd.DataFrame, q_raw: str, q: str) -> str | None:
     # 3) Average attractiveness for a named MSA.
     if "average attractiveness" in q and "msa" in q and "for" in q and "msa_name" in df.columns:
         score_col = _score_column_for_question(df, q)
-        m = re.search(r"for\s+(.+?)\s+msa", q_raw, flags=re.IGNORECASE)
+        # Match "for [the] <name> MSA" or "for <name> MSA" — strip leading articles
+        m = re.search(r"for\s+(?:the\s+)?(.+?)\s+msa", q_raw, flags=re.IGNORECASE)
         if not m:
             return None
-        target = m.group(1).strip().lower()
+        target = re.sub(r"^(the|a|an)\s+", "", m.group(1).strip(), flags=re.IGNORECASE).lower()
         grouped = _msa_mean_scores(df, score_col) if _prefers_mean_average(q) else _msa_weighted_scores(df, score_col)
         match = _resolve_msa_name(grouped, target)
         if not match:
