@@ -15,13 +15,3 @@ def normalize_zip(value) -> str:
     if n < 0:
         return s
     return str(n).zfill(5) if n <= 99999 else str(n)
-
-
-def selected_zip_set(selected: list[dict]) -> set[str]:
-    """Return normalized ZIP set from selected ZIP payloads."""
-    out = set()
-    for item in selected:
-        z = normalize_zip(item.get("zipcode", ""))
-        if z:
-            out.add(z)
-    return out

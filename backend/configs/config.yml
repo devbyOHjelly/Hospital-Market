@@ -2,88 +2,23 @@ project:
   name: hospital_market_intel
   default_states: ["FL", "GA", "AL"]
 
-registry:
-  mode: national_then_views
+paths:
+  # Default matches data/raw/final_tier1_all_percentiles.parquet or tier1/ subfolder
+  tier1_parquet: data/raw/final_tier1_all_percentiles.parquet
+  output_gpkg: data/zcta_hospital_potential.gpkg
 
-markets:
-  - market_id: florida
-    label: Florida (Statewide)
-    cbsa_codes: []
-    counties: []
-    zips: []
-    states: ["FL"]
+hospital_potential:
+  use_direct_columns:
+    - attractiveness_score_opt2
+    - hospital_potential
+  factors: []
+  fallback: 50.0
 
-  - market_id: georgia
-    label: Georgia (Statewide)
-    cbsa_codes: []
-    counties: []
-    zips: []
-    states: ["GA"]
-
-  - market_id: alabama
-    label: Alabama (Statewide)
-    cbsa_codes: []
-    counties: []
-    zips: []
-    states: ["AL"]
-
-  - market_id: orlando_msa
-    label: Orlando-Kissimmee-Sanford, FL
-    cbsa_codes: ["36740"]
-    counties: ["12095", "12097", "12069", "12117"]   # Orange, Osceola, Lake, Seminole
-    zips: ["32801", "32803", "32806", "32819", "34741"]
-    states: ["FL"]
-
-sources:
-  nppes:
-    enabled: true
-    raw_dir: data/raw/NPPES_Data_Dissemination_February_2026
-    monthly_file_glob: "npidata_pfile_*.csv"
-
-  cms_hospital_general_info:
-    enabled: true
-    api:
-      base_url: "https://data.cms.gov/provider-data/api/"
-      dataset_id: "xubh-q36u"
-      app_token: ""
-    raw_file: ""
-
-reference_data:
-  cbsa_delineation:
-    local_file: "data/raw/reference/county_to_cbsa.csv"
-    # Canonical source: Census CBSA delineation (July 2023, OMB Bulletin 23-01).
-    # Also accepts the raw Excel (list1_2023.xlsx) — the loader auto-detects format.
-
-  hud_zip_crosswalk:
-    enabled: true
-    cache_file: "data/raw/reference/hud_zip_county_crosswalk.csv"
-    # Source: HUD-USPS ZIP Code Crosswalk Files (quarterly updates).
-    # The loader picks the highest-weight county per ZIP when weights are present.
-
-tier2_sources:
-  cms_cost_report:
-    enabled: true
-    cache_file: "data/raw/reference/cms_cost_report.parquet"
-  medicare_geo_variation:
-    enabled: true
-    cache_file: "data/raw/reference/medicare_geo_variation.parquet"
-  sahie:
-    enabled: true
-    cache_file: "data/raw/reference/sahie_uninsured.parquet"
-  acs_medicaid:
-    enabled: true
-    cache_file: "data/raw/reference/acs_medicaid.parquet"
-  cms_outpatient:
-    enabled: true
-    cache_file: "data/raw/reference/cms_outpatient.parquet"
-
-processing:
-  entity_resolution:
-    name_similarity_threshold: 90
-    require_state_match: true
-  scoring:
-    enabled: true
-    rubric_file: configs/scoring_rubric.yml
+entity_layer:
+  entity_count: 0
+  hospital_count: 0
+  avg_entity_score: 0.0
+  avg_confidence: 0.0
 
 outputs:
-  write_parquet: true
+  write_gpkg: true

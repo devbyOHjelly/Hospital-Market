@@ -1010,12 +1010,30 @@ button[data-testid="collapsedControl"] { display:none !important; }
     gap: 8px;
     overflow: hidden;
 }
-.agent-title {
-    font-size: 1.1rem;
-    font-weight: 700;
-    color: #1a1a1a;
-    margin: 0;
-    padding: 0 0 2px;
+/* Agent tab: use viewport height so chat scales on laptops → large monitors.
+   Offset must clear tab bar + .tab-content padding so sidebar-content does not gain a ~10px scroll. */
+.settings-section.agent-tab-section {
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    min-height: min(1080px, calc(100vh - 76px));
+    max-height: calc(100vh - 76px);
+    height: calc(100vh - 76px);
+    overflow: hidden;
+}
+.settings-section.agent-tab-section .agent-shell {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    height: 100%;
+    padding-top: 8px;
+    gap: 0;
+}
+.settings-section.agent-tab-section .agent-chat-block {
+    flex: 1 1 auto;
+    min-height: clamp(400px, 40vh, 560px);
+    height: auto;
+    max-height: none;
 }
 .agent-config {
     display: grid;
@@ -1060,8 +1078,10 @@ button[data-testid="collapsedControl"] { display:none !important; }
     border-radius: 0;
     display: flex;
     flex-direction: column;
-    /* Responsive height: slightly taller on laptops, scales on larger monitors */
-    height: clamp(520px, 72vh, 920px);
+    flex: 1 1 auto;
+    min-height: clamp(480px, 58vh, 720px);
+    height: auto;
+    max-height: min(92vh, 1040px);
     overflow: hidden;
 }
 .agent-thread-wrap {
@@ -1114,8 +1134,7 @@ button[data-testid="collapsedControl"] { display:none !important; }
     line-height: 1.35;
 }
 .agent-msg-user .agent-msg-label,
-.agent-msg-user .agent-msg-text,
-.agent-title {
+.agent-msg-user .agent-msg-text {
     color: #ffffff !important;
 }
 .agent-compose {
@@ -1568,7 +1587,6 @@ iframe { border-radius:0; }
 .def-note,
 .settings-title,
 .settings-note,
-.agent-title,
 .agent-msg-text,
 .agent-msg-label,
 .ranks-section,
@@ -1697,9 +1715,6 @@ iframe { border-radius:0; }
 .agent-context,
 .agent-context span {
     color: #ffffff !important;
-}
-.agent-title {
-    color: #ff7f00 !important;
 }
 .agent-msg-user {
     background: #ff7f00 !important;
@@ -1961,6 +1976,29 @@ iframe { border-radius:0; }
     border-radius: 0 !important;
     background: #000000 !important;
     box-shadow: none !important;
+}
+
+/* Reference tab — Tier Weights: match Construct Score / formula typography */
+.definitions-section .def-formula .def-tier-weights-title {
+    margin-top: 10px !important;
+    margin-bottom: 6px !important;
+}
+.definitions-section .def-formula ul.def-tier-weights-list {
+    margin: 0 0 8px 0 !important;
+    padding: 0 0 0 1.15em !important;
+    list-style: disc !important;
+    list-style-position: outside !important;
+    font-family: "Open Sans", "Segoe UI", Tahoma, Arial, sans-serif !important;
+    font-size: 0.72rem !important;
+    font-weight: 400 !important;
+    line-height: 1.45 !important;
+    color: #ffffff !important;
+}
+.definitions-section .def-formula ul.def-tier-weights-list li {
+    margin: 2px 0 !important;
+    padding: 0 !important;
+    font-size: inherit !important;
+    font-family: inherit !important;
 }
 
 /* References -> Construct Score spacing */

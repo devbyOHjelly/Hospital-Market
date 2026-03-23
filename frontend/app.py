@@ -69,7 +69,7 @@ _TIER1_NUMERIC_INDICATORS = [
 ]
 
 _DIMENSION_INDICATORS = {
-    # Batch 1: Attractiveness (original 5)
+    # Batch 1: Attractiveness
     "attractiveness": [
         "age_65_plus_pct",
         "population_growth_rate_2yr",
@@ -82,7 +82,7 @@ _DIMENSION_INDICATORS = {
         "unemployment_rate",
         "industry_public_administration",
     ],
-    # Batch 2: Strength -> Ripeness
+    # Batch 3: Ripeness
     "ripeness": [
         "bachelors_or_higher_pct",
         "industry_education_and_health",
@@ -90,7 +90,7 @@ _DIMENSION_INDICATORS = {
         "per_capita_income_growth_2yr",
         "county_level_gdp_growth_5yr",
     ],
-    # Batch 2: Rightness -> Economic Significance
+    # Batch 4: Economic Significance
     "economic_significance": [
         "hispanic_pct",
         "black_pct",
@@ -100,35 +100,28 @@ _DIMENSION_INDICATORS = {
     ],
 }
 _INVERTED_INDICATORS = {
-    # Lower unemployment is better.
+    # Lower unemployment is better
     "unemployment_rate",
 }
 _AUTO_TO_ATTR: list[str] = []
 
-
 def _pretty_indicator_name(ind: str) -> str:
     return ind.replace("_", " ").title()
-
 
 def _dim_weight_id(dim: str) -> str:
     return f"w_dim_{dim}"
 
-
 def _tier_weight_id(tier: str) -> str:
     return f"w_{tier}"
-
 
 def _option_component_slider_id(score_col: str, component_col: str) -> str:
     return f"w_opt_{score_col}_{component_col}"
 
-
 def _construct_component_slider_id(score_col: str, dim: str, indicator: str) -> str:
     return f"w_c_{score_col}_{dim}_{indicator}"
 
-
 def _ind_weight_id(ind: str) -> str:
     return f"w_ind_{ind}"
-
 
 def _safe_slider_input(input_obj, input_id: str, default: float) -> float:
     try:
@@ -136,7 +129,6 @@ def _safe_slider_input(input_obj, input_id: str, default: float) -> float:
         return default if v is None else float(v)
     except Exception:
         return default
-
 
 def _default_option_component_weights() -> dict[str, dict[str, float]]:
     out: dict[str, dict[str, float]] = {}
@@ -147,11 +139,7 @@ def _default_option_component_weights() -> dict[str, dict[str, float]]:
         out[score_col] = weights
     return out
 
-
 def _default_construct_component_weights() -> dict[str, dict[str, dict[str, float]]]:
-    # Option-specific defaults:
-    # - Attractiveness follows Option 1/2/4 definitions from SCORE_DEFINITIONS.
-    # - Other constructs default to equal split across their assigned indicators.
     out: dict[str, dict[str, dict[str, float]]] = {}
     for score_col in _SCORE_OPTION_CHOICES:
         out[score_col] = {}
@@ -172,7 +160,7 @@ def _default_construct_component_weights() -> dict[str, dict[str, dict[str, floa
                     out[score_col][dim] = dim_w
                     continue
 
-            # Integer-friendly equal split that sums exactly to 100.
+            # Integer-friendly equal split that sums exactly to 100
             base = 100.0 / float(len(cols))
             ws = {c: float(int(base)) for c in cols}
             rem = int(round(100.0 - sum(ws.values())))
@@ -180,7 +168,6 @@ def _default_construct_component_weights() -> dict[str, dict[str, dict[str, floa
                 ws[c] += 1.0
             out[score_col][dim] = ws
     return out
-
 
 def _settings_weights_panel():
     tier1_options_block = ui.div(
@@ -272,7 +259,6 @@ def _settings_weights_panel():
         class_="settings-shell",
     )
 
-
 def _settings_map_filters_panel():
     return ui.div(
         ui.div(
@@ -321,7 +307,7 @@ app_ui = ui.page_sidebar(
             ),
             # Ranks tab
             ui.nav_panel(
-                "ZIPs",
+                "ZIP Scores",
                 ui.div(
                     ui.output_ui("rank_count_title"),
                     ui.div(
@@ -339,9 +325,9 @@ app_ui = ui.page_sidebar(
                     ),
                     class_="ranks-section",
                 ),
-                value="ZIPs",
+                value="ZIP_Scores",
             ),
-            # myMarket tab
+            # Market tab
             ui.nav_panel(
                 "Market",
                 ui.div(
@@ -350,12 +336,11 @@ app_ui = ui.page_sidebar(
                 ),
                 value="Market",
             ),
-            # myAgent tab
+            # Agent tab
             ui.nav_panel(
                 "Agent",
                 ui.div(
                     ui.div(
-                        ui.div("Agent", class_="agent-title"),
                         ui.div(
                             ui.div(ui.output_ui("agent_thread"), class_="agent-thread-wrap"),
                             ui.div(
@@ -373,7 +358,7 @@ app_ui = ui.page_sidebar(
                         ),
                         class_="agent-shell",
                     ),
-                    class_="settings-section",
+                    class_="settings-section agent-tab-section",
                 ),
                 value="Agent",
             ),
@@ -434,7 +419,7 @@ def server(input, output, session):
     agent_messages = reactive.value([
         {
             "role": "assistant",
-            "text": "Hi I’m Agent, your market strategy assistant.",
+            "text": "Hi, I’m your market strategy assistant.",
         }
     ])
 
@@ -490,8 +475,6 @@ def server(input, output, session):
                     comp_series[pct_col] = s
 
             if not comp_series:
-                # Always materialize score columns so option selection can't silently
-                # fall back to another option when a source factor is missing.
                 if score_col in data.columns:
                     data[score_col] = pd.to_numeric(data[score_col], errors="coerce").fillna(fallback).clip(0, 100)
                 else:
@@ -505,7 +488,7 @@ def server(input, output, session):
             if pct_sum <= 0:
                 pct_sum = 100.0
 
-            # Option 1: equal-weight z-score average, then min-max rescale to 0-100.
+            # Option 1: equal-weight z-score average, then min-max rescale to 0-100
             if score_col == "attractiveness_score_opt1":
                 z_scores = (comp_df - comp_df.mean()) / comp_df.std()
                 z_scores = z_scores.replace([float("inf"), float("-inf")], pd.NA)
@@ -532,7 +515,7 @@ def server(input, output, session):
                     data[score_col] = pd.to_numeric(rescaled, errors="coerce").fillna(fallback).clip(0, 100).round(2)
                 continue
 
-            # Option 4: weighted percentile rank average (0-99 scale).
+            # Option 4: weighted percentile rank average (0-99 scale)
             if score_col == "attractiveness_score_opt4":
                 weighted_num = None
                 weighted_den = None
@@ -548,7 +531,7 @@ def server(input, output, session):
                 data[score_col] = pd.to_numeric(eq, errors="coerce").fillna(fallback).clip(0, 99).round(2)
                 continue
 
-            # Option 2: expert-weight percentile blend (weights editable in settings).
+            # Option 2: expert-weight percentile blend (weights editable in settings)
             weighted = None
             for pct_col in comp_cols:
                 default_pct = float((components.get(pct_col) or {}).get("weight", 0.0)) * 100.0
@@ -558,11 +541,7 @@ def server(input, output, session):
             if weighted is not None:
                 data[score_col] = pd.to_numeric(weighted, errors="coerce").fillna(fallback).clip(0.0, 99.0).round(2)
 
-        # Ensure all four construct option columns exist and are populated.
-        # Some upstream files only guarantee attractiveness option columns; when
-        # the other construct columns are missing, compute deterministic
-        # construct scores from Tier 1 indicators so values don't collapse to
-        # fallback clones.
+        # Ensure all four construct option columns exist and are populated  
         construct_col_map = {
             "attractiveness": {"opt1": "attractiveness_score_opt1", "opt2": "attractiveness_score_opt2", "opt4": "attractiveness_score_opt4"},
             "ability_to_win": {"opt1": "win_score_opt1", "opt2": "win_score_opt2", "opt4": "win_score_opt4"},
@@ -620,8 +599,6 @@ def server(input, output, session):
                 else:
                     out = ((z_avg - mn) / (mx - mn) * 100.0)
                 return pd.to_numeric(out, errors="coerce").clip(0.0, 100.0).round(2)
-            # Option 2 and Option 4 default to equal-weight percentile blend
-            # when explicit construct-specific expert weights are unavailable.
             num = comp_df.fillna(0.0).mul(w_series, axis=1).sum(axis=1)
             den = comp_df.notna().astype(float).mul(w_series, axis=1).sum(axis=1).replace(0, pd.NA)
             out = num / den
@@ -645,8 +622,6 @@ def server(input, output, session):
         if opt_suffix not in {"opt1", "opt2", "opt4"}:
             opt_suffix = "opt2"
 
-        # Build all 4 construct series from the approved option (single global option selector).
-        # This keeps scoring aligned with Attractiveness + Ability to Win + Ripeness + Economic Significance.
         attr_series = _series_or_default(f"attractiveness_score_{opt_suffix}", default=float("nan"))
         win_series = _series_or_default(f"win_score_{opt_suffix}", default=float("nan"))
         ripe_series = _series_or_default(f"strength_score_{opt_suffix}", default=float("nan"))
@@ -657,7 +632,6 @@ def server(input, output, session):
         data["ripeness"] = pd.to_numeric(ripe_series, errors="coerce").fillna(fallback).clip(0, 100)
         data["economic_significance"] = pd.to_numeric(econ_series, errors="coerce").fillna(fallback).clip(0, 100)
 
-        # Tier 1 is the construct composite under the selected option.
         tier1_base = (
             pd.concat(
                 [
@@ -762,7 +736,6 @@ def server(input, output, session):
         data = input.map_click()
         if not data:
             return
-        # Keep selected ZIP payload free of non-parquet geometry/system fields.
         if isinstance(data, dict):
             data = dict(data)
             for k in ("geometry", "__geo_interface__", "__ord"):
@@ -899,7 +872,6 @@ def server(input, output, session):
             dim_series["economic_significance"] if dim_series["economic_significance"] is not None else fallback
         )
 
-        # Apply dimension-level weighting (25 each keeps dimensions unchanged).
         dim_weights = {
             dim: max(0.0, float(_approved_dim_weights().get(dim, 25.0)))
             for dim, _ in _DIMENSION_META
@@ -917,15 +889,12 @@ def server(input, output, session):
         cell_w, cell_h = pw / 3.0, ph / 3.0
 
         bg_rects = (
-            # High attractiveness row
             f'<rect x="{ml:.1f}" y="{mt:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" fill="#ffd08a"/>'
             f'<rect x="{ml+cell_w:.1f}" y="{mt:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" fill="#ffab4a"/>'
             f'<rect x="{ml+2*cell_w:.1f}" y="{mt:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" fill="#ff7f00"/>'
-            # Medium attractiveness row
             f'<rect x="{ml:.1f}" y="{mt+cell_h:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" fill="#ffe8c0"/>'
             f'<rect x="{ml+cell_w:.1f}" y="{mt+cell_h:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" fill="#ffd08a"/>'
             f'<rect x="{ml+2*cell_w:.1f}" y="{mt+cell_h:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" fill="#ffab4a"/>'
-            # Low attractiveness row
             f'<rect x="{ml:.1f}" y="{mt+2*cell_h:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" fill="#ffffff"/>'
             f'<rect x="{ml+cell_w:.1f}" y="{mt+2*cell_h:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" fill="#ffe8c0"/>'
             f'<rect x="{ml+2*cell_w:.1f}" y="{mt+2*cell_h:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" fill="#ffd08a"/>'
@@ -940,19 +909,15 @@ def server(input, output, session):
         def _r(v):
             return 5.5 + (max(0.0, min(100.0, float(v))) / 100.0) * 12.5
 
-        # Single framework point for the selected state (aggregate position).
-        # Round aggregate coordinates to keep framework point visually stable across reloads.
         agg_attr = round(float(data["attractiveness"].fillna(0).mean()), 2)
         agg_win = round(float(data["ability_to_win"].fillna(0).mean()), 2)
         agg_ripe = round(float(data["ripeness"].fillna(0).mean()), 2)
         agg_econ = round(float(data["economic_significance"].fillna(0).mean()), 2)
         agg_score = round(float(data["hospital_potential"].fillna(0).mean()), 2)
 
-        # Reference framework example bubble should remain green.
         bubble_fill = "#22c55e"
         bubble_stroke = "#000000"
 
-        # Keep reference example as a clear "best-case" visual without clipping.
         cx, cy, rr = _x(86.0), _y(86.0), min(16.0, max(10.0, _r(agg_econ) * 0.55))
         tip = html.escape(
             f"{state_val or 'Market'} | Attractiveness {agg_attr:.1f} | Ability to Win {agg_win:.1f} | "
@@ -1137,20 +1102,18 @@ def server(input, output, session):
         )
 
         construct_score_html = (
-            '<div class="def-body" style="margin-top:10px;">'
             '<div class="def-formula-eq">Construct Score = &Sigma; (t<sub>i</sub> &times; T<sub>i</sub>)</div>'
             '<div class="def-formula-row"><span class="def-chip">T1</span><span>= Tier 1 score for the construct</span></div>'
             '<div class="def-formula-row"><span class="def-chip">T2</span><span>= Tier 2 score for the construct</span></div>'
             '<div class="def-formula-row"><span class="def-chip">T3</span><span>= Tier 3 score for the construct</span></div>'
             '<div class="def-formula-row"><span class="def-chip">t<sub>i</sub></span><span>= tier weight for tier i</span></div>'
             '<div style="height:24px;"></div>'
-            '<div class="def-construct-tier-line" style="margin-bottom:8px;"><b>Tier Weights</b></div>'
-            '<ul style="margin:8px 0 0 20px;padding-left:14px;line-height:1.8;">'
+            '<div class="def-score-title def-tier-weights-title">Tier Weights</div>'
+            '<ul class="def-tier-weights-list">'
             '<li>Tier 1 = 0.33</li>'
             '<li>Tier 2 = 0.33</li>'
             '<li>Tier 3 = 0.33</li>'
             '</ul>'
-            '</div>'
         )
 
         html_block = (
@@ -1209,9 +1172,11 @@ def server(input, output, session):
             f'{sub_construct_score_html}'
             '</div>'
             '<hr class="def-section-divider"/>'
-            '<div class="def-card">'
+            '<div class="def-card def-card-formula">'
             '<div class="def-title">Construct Score</div>'
+            '<div class="def-formula">'
             f'{construct_score_html}'
+            '</div>'
             '</div>'
             '<hr class="def-section-divider"/>'
             '<div class="def-card def-card-formula">'
@@ -1245,8 +1210,6 @@ def server(input, output, session):
     @render.ui
     def market_panel():
         sel = selected_zips()
-        # Rehydrate selected ZIP records from the latest weighted frame so
-        # approved Settings changes (option/weights) update Market scores.
         live = r_gdf().copy()
         sel_live = sel
         if sel and live is not None and len(live) > 0 and "zipcode" in live.columns:
@@ -1277,7 +1240,6 @@ def server(input, output, session):
                 sel_live,
                 entities_for_zips,
                 selected_option=str(_approved_score_option() or DEFAULT_SCORE_COLUMN),
-                tier_weights={tier: float(_approved_tier_weights().get(tier, _DEFAULT_TIER_WEIGHTS.get(tier, 0.0))) for tier, _ in _TIER_META},
             )
         )
 
@@ -1618,7 +1580,6 @@ def server(input, output, session):
                 st = str(rows.loc[idx, "state"]) if "state" in rows.columns else ""
                 val = float(s.loc[idx])
                 return f"For selected ZIPs, ZIP {z}{(' (' + st + ')') if st else ''} is strongest for market potential at {val:.2f}."
-            # Let population-growth questions flow to the option-aware router.
             if asks_population_growth:
                 return None
             if not (asks_population and asks_highest):
@@ -1743,7 +1704,7 @@ def server(input, output, session):
                         "total_population": _clean_scalar(pop.loc[top_idx]),
                     }
         context = {
-            "tier1_data_source": "backend/data/raw/tier1/final_tier1_all_percentiles.parquet",
+            "tier1_data_source": "backend/data/raw/final_tier1_all_percentiles.parquet",
             "weights": {tier: float(_approved_tier_weights().get(tier, _DEFAULT_TIER_WEIGHTS.get(tier, 0.0))) for tier, _ in _TIER_META},
             "selected_option": str(_approved_score_option() or DEFAULT_SCORE_COLUMN),
             "available_states": available_states,
@@ -1836,7 +1797,6 @@ def server(input, output, session):
             "settings_score_option",
             selected=selected_default_option,
         )
-        # Push defaults back into all Tier 1 construct sliders for the selected option.
         default_construct = _default_construct_component_weights().get(selected_default_option, {})
         for dim, _ in _DIMENSION_META:
             for ind, w in default_construct.get(dim, {}).items():
@@ -1861,8 +1821,6 @@ def server(input, output, session):
             slider_id = _option_component_slider_id(selected_option, component_col)
             option_values[component_col] = max(0.0, _safe_slider_input(input, slider_id, default_weight))
         total_weight = sum(option_values.values())
-        # Enforce 100% validation only for Option 2 (expert-weight blend).
-        # Option 1 and Option 4 are formula-driven and should always be approvable.
         if selected_option == "attractiveness_score_opt2" and int(round(total_weight)) != 100:
             _settings_weights_feedback.set(
                 f"Tier 1 option weights must total 100 before approval. Current total: {int(round(total_weight))}."
@@ -1886,7 +1844,6 @@ def server(input, output, session):
             if dim_vals:
                 total_raw = float(sum(dim_vals.values()))
                 total_pct = int(round(total_raw))
-                # Strictly enforce Option 2 construct totals at exactly 100.
                 if selected_option == "attractiveness_score_opt2":
                     if abs(total_raw - 100.0) > 1e-9:
                         bad_dims.append(f"{label} ({total_pct}%)")
@@ -2226,7 +2183,6 @@ def server(input, output, session):
             show_market_layer=show_market_layer,
             show_entities_layer=show_entities_layer,
         ))
-
 
 # App
 app = App(app_ui, server, static_assets=WWW_DIR)

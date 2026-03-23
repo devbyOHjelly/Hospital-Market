@@ -7,6 +7,7 @@ from frontend.config import DATA_PATH, ENTITIES_PATH, BACKEND_DIR
 
 _DEFAULT_STATES = {"Florida", "Georgia", "Alabama"}
 _TIER1_PARQUET_CANDIDATES = [
+    os.path.join(BACKEND_DIR, "data", "raw", "final_tier1_all_percentiles.parquet"),
     os.path.join(BACKEND_DIR, "data", "raw", "tier1", "final_tier1_all_percentiles.parquet"),
     os.path.join(BACKEND_DIR, "data", "raw", "tier1", "final_tier1_percentiles.parquet"),
 ]
@@ -15,7 +16,7 @@ _TIER1_PARQUET_CANDIDATES = [
 def _auto_build_gpkg(empty_mode: bool = False):
     """Try to build the .gpkg automatically (FL, GA, AL)."""
     try:
-        from backend.modules.map.build_base_map import build as build_map_data
+        from backend.map.build_base_map import build as build_map_data
 
         print(f"  Auto-building base map for: {sorted(_DEFAULT_STATES)}")
         build_map_data(state_filter=_DEFAULT_STATES, empty_mode=empty_mode)

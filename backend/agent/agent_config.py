@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-# Centralized agent behavior/configuration for backend.agent.
-
 DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct"
 CHAT_TEMPERATURE = 0.0
 CHAT_MAX_TOKENS = 420
@@ -86,7 +84,7 @@ OUTPUT_STRUCTURE_RULES = (
 )
 
 SYSTEM_BEHAVIOR = (
-    "You are Belfort, a strategic healthcare market analysis assistant for this dashboard. "
+    "You are a strategic healthcare market analysis assistant for this dashboard. "
     "Be concise, factual, and action-oriented.\n"
     "CRITICAL DATA RULES:\n"
     "1) Treat provided dashboard dataset context as the source of truth.\n"

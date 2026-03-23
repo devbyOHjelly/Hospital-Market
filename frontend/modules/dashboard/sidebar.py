@@ -4,7 +4,6 @@ from frontend.config import COLORMAP
 
 MAX_SELECTED = 10
 
-
 def entity_count_html(count: int | None) -> str:
     if count is None or count == 0:
         return ""
@@ -13,7 +12,6 @@ def entity_count_html(count: int | None) -> str:
         f'text-transform:uppercase;margin-top:8px;margin-bottom:2px;">'
         f'Entities on Map: <b style="color:#22c55e;">{count:,}</b></div>'
     )
-
 
 def map_chips_html(selected: list[dict], limit_msg: str = "") -> str:
     if not selected:
@@ -34,31 +32,6 @@ def map_chips_html(selected: list[dict], limit_msg: str = "") -> str:
         f'<div class="map-chips-items">{chips}</div>'
         f"</div>"
     )
-
-
-_TIER2_NA_FACTORS = [
-    "Commercial % of Covered Lives",
-    "Dual-Eligible Population",
-    "Fully Insured vs Self-Insured Ratio",
-    "Health Plan Market Share by MCO",
-    "Health Insurance Exchange Enrollment",
-    "Health System Market Share",
-    "Net New IP Bed Inventory",
-    "Competitor Revenue & Financial Performance",
-    "Market Control",
-    "Provider Alignment Stage",
-    "Value-Based Care Adoption Stage",
-    "Physician Age Profile",
-    "Burnout / Intent to Reduce Services",
-]
-
-
-def _safe_float(val, default=0.0):
-    try:
-        v = float(val)
-        return v if v == v else default
-    except (TypeError, ValueError):
-        return default
 
 
 def _weighted_avg_from_selected(
@@ -101,21 +74,9 @@ def _weighted_avg_from_selected(
     return sum(plain) / len(plain)
 
 
-def _clip_norm(value, lo, hi, invert=False):
-    v = _safe_float(value)
-    if hi <= lo:
-        return 50.0
-    r = (v - lo) / (hi - lo)
-    r = max(0.0, min(1.0, r))
-    if invert:
-        r = 1.0 - r
-    return r * 100.0
-
-
 def _market_framework_html(
     selected: list[dict],
     selected_option: str = "attractiveness_score_opt2",
-    tier_weights: dict | None = None,
 ) -> str:
     """Framework chart for market-average view (single dynamic bubble)."""
     if not selected:
@@ -173,7 +134,7 @@ def _market_framework_html(
     r = 5.5 + (max(0.0, min(100.0, econ)) / 100.0) * 12.5
     cx, cy = _x(ability), _y(attr)
 
-    # Color reflects ripeness. With no Tier-2/3 data, keep low-ripeness red.
+    # Bubble color from ripeness construct.
     if ripe >= 67:
         bubble_fill = "#22c55e"
     elif ripe >= 34:
@@ -212,212 +173,72 @@ def _market_framework_html(
     )
 
 
-def _build_tier2_rows(selected, _avg_fn, _fmt_fn):
-    """Build aggregate Tier 2 rows from selected ZIP properties."""
-    na = '<span style="color:#1a1a1a;">N/A</span>'
-
-    avg_hhi = _avg_fn("hhi_market_concentration")
-    if avg_hhi and avg_hhi > 0:
-        if avg_hhi > 2500:
-            hhi_label = f"{int(avg_hhi):,} (Concentrated)"
-        elif avg_hhi > 1500:
-            hhi_label = f"{int(avg_hhi):,} (Moderate)"
-        else:
-            hhi_label = f"{int(avg_hhi):,} (Competitive)"
-    else:
-        hhi_label = na
-
-    bene_total = sum(_safe_float(z.get("bene_count")) for z in selected)
-    bene_pen = _avg_fn("medicare_beneficiary_penetration_pct")
-    total_pop = sum(_safe_float(z.get("total_population")) for z in selected)
-    total_beds = sum(_safe_float(z.get("total_beds")) for z in selected)
-    total_discharges = sum(_safe_float(z.get("total_discharges")) for z in selected)
-    if (bene_pen is None or bene_pen == 0) and total_pop > 0 and bene_total > 0:
-        bene_pen = (bene_total / total_pop) * 100.0
-
-    beds_per_100k = _avg_fn("inpatient_beds_per_100k")
-    if (beds_per_100k is None or beds_per_100k == 0) and total_pop > 0 and total_beds > 0:
-        beds_per_100k = (total_beds / total_pop) * 100_000.0
-
-    discharges_per_100k = _avg_fn("inpatient_discharges_per_100k")
-    if (
-        (discharges_per_100k is None or discharges_per_100k == 0)
-        and total_pop > 0
-        and total_discharges > 0
-    ):
-        discharges_per_100k = (total_discharges / total_pop) * 100_000.0
-
-    ed_per_100k = _avg_fn("ed_visits_per_100k")
-    if (ed_per_100k is None or ed_per_100k == 0) and total_pop > 0 and bene_total > 0:
-        ed_per_1k_bene = _avg_fn("er_visits_per_1k")
-        if ed_per_1k_bene not in (None, 0):
-            est_ed_visits = (ed_per_1k_bene * bene_total) / 1000.0
-            ed_per_100k = (est_ed_visits / total_pop) * 100_000.0
-
-    bene_label = (
-        f"{int(bene_total):,} ({bene_pen:.1f}%)"
-        if bene_total > 0 and bene_pen not in (None, 0)
-        else (_fmt_fn(bene_total, "int") if bene_total > 0 else na)
-    )
-
-    rows = [
-        ("Physician Supply: Primary Care per 100K", _fmt_fn(_avg_fn("pcp_per_100k"), "num")),
-        (
-            "Physician Supply: Specialty per 100K",
-            _fmt_fn(_avg_fn("specialist_per_100k"), "num"),
-        ),
-        (
-            "Number of Facilities by Type",
-            _fmt_fn(sum(_safe_float(z.get("facility_total")) for z in selected), "int"),
-        ),
-        ("Inpatient Beds per 100K", _fmt_fn(beds_per_100k, "num")),
-        ("Inpatient Discharges per 100K", _fmt_fn(discharges_per_100k, "num")),
-        ("IP Bed Utilization Rate", _fmt_fn(_avg_fn("bed_utilization_rate"), "pct")),
-        ("ED Visits per 100K", _fmt_fn(ed_per_100k, "num")),
-        (
-            "Hospital Outpatient Visits per 1,000",
-            _fmt_fn(_avg_fn("outpatient_visits_per_1k"), "num"),
-        ),
-        ("Medicare Beneficiary Count & Penetration", bene_label),
-        ("Medicare Advantage Penetration", _fmt_fn(_avg_fn("ma_penetration"), "pct")),
-        ("Medicaid Enrollment & Penetration", _fmt_fn(_avg_fn("medicaid_pct"), "pct")),
-        (
-            "Medicare Discharges per 1,000 Beneficiaries",
-            _fmt_fn(_avg_fn("ip_stays_per_1k"), "num"),
-        ),
-        ("Uninsured Rate", _fmt_fn(_avg_fn("uninsured_rate"), "pct")),
-        ("Operating Margin", _fmt_fn(_avg_fn("operating_margin_pct"), "pct")),
-        (
-            "Net Patient Service Revenue",
-            _fmt_fn(_avg_fn("net_patient_revenue", skip_negative=True), "money"),
-        ),
-        ("Market Consolidation Level (HHI)", hhi_label),
-    ]
-    for f in _TIER2_NA_FACTORS:
-        rows.append((f, na))
-    return rows
-
-
-def _build_tier2_rows_single(zd, _fmt_fn):
-    """Build per-ZIP Tier 2 rows from a single ZIP dict."""
-    na = '<span style="color:#1a1a1a;">N/A</span>'
-
-    def _g(key):
-        return _safe_float(zd.get(key))
-
-    pop = _g("total_population")
-    beds_per_100k = _g("inpatient_beds_per_100k")
-    if beds_per_100k == 0 and pop > 0 and _g("total_beds") > 0:
-        beds_per_100k = (_g("total_beds") / pop) * 100_000.0
-
-    discharges_per_100k = _g("inpatient_discharges_per_100k")
-    if discharges_per_100k == 0 and pop > 0 and _g("total_discharges") > 0:
-        discharges_per_100k = (_g("total_discharges") / pop) * 100_000.0
-
-    bene_pen = _g("medicare_beneficiary_penetration_pct")
-    if bene_pen == 0 and pop > 0 and _g("bene_count") > 0:
-        bene_pen = (_g("bene_count") / pop) * 100.0
-
-    ed_per_100k = _g("ed_visits_per_100k")
-    if ed_per_100k == 0 and pop > 0 and _g("bene_count") > 0 and _g("er_visits_per_1k") > 0:
-        est_ed_visits = (_g("er_visits_per_1k") * _g("bene_count")) / 1000.0
-        ed_per_100k = (est_ed_visits / pop) * 100_000.0
-
-    facility_detail = ""
-    ft = _g("facility_total")
-    if ft > 0:
-        parts = []
-        for label, key in [
-            ("Hosp", "facility_hospital"),
-            ("ASC", "facility_asc"),
-            ("Lab", "facility_lab"),
-            ("Img", "facility_imaging"),
-            ("UC", "facility_urgent_care"),
-            ("SNF", "facility_snf"),
-        ]:
-            v = _g(key)
-            if v > 0:
-                parts.append(f"{label}:{int(v)}")
-        facility_detail = f'{int(ft)} ({", ".join(parts)})' if parts else f"{int(ft)}"
-    else:
-        facility_detail = na
-
-    hhi_val = _g("hhi_market_concentration")
-    if hhi_val > 0:
-        if hhi_val > 2500:
-            hhi_label = f"{int(hhi_val):,} (Concentrated)"
-        elif hhi_val > 1500:
-            hhi_label = f"{int(hhi_val):,} (Moderate)"
-        else:
-            hhi_label = f"{int(hhi_val):,} (Competitive)"
-    else:
-        hhi_label = na
-
-    rows = [
-        (
-            "Physician Supply: Primary Care per 100K",
-            _fmt_fn(_g("pcp_per_100k"), "num") if _g("pcp_per_100k") else na,
-        ),
-        (
-            "Physician Supply: Specialty per 100K",
-            _fmt_fn(_g("specialist_per_100k"), "num") if _g("specialist_per_100k") else na,
-        ),
-        ("Number of Facilities by Type", facility_detail),
-        ("Inpatient Beds per 100K", _fmt_fn(beds_per_100k, "num") if beds_per_100k else na),
-        (
-            "Inpatient Discharges per 100K",
-            _fmt_fn(discharges_per_100k, "num") if discharges_per_100k else na,
-        ),
-        (
-            "IP Bed Utilization Rate",
-            _fmt_fn(_g("bed_utilization_rate"), "pct") if _g("bed_utilization_rate") else na,
-        ),
-        ("ED Visits per 100K", _fmt_fn(ed_per_100k, "num") if ed_per_100k else na),
-        (
-            "Hospital Outpatient Visits per 1,000",
-            _fmt_fn(_g("outpatient_visits_per_1k"), "num") if _g("outpatient_visits_per_1k") else na,
-        ),
-        (
-            "Medicare Beneficiary Count & Penetration",
-            (
-                f'{int(_g("bene_count")):,} ({bene_pen:.1f}%)'
-                if _g("bene_count") and bene_pen
-                else (_fmt_fn(_g("bene_count"), "int") if _g("bene_count") else na)
-            ),
-        ),
-        (
-            "Medicare Advantage Penetration",
-            _fmt_fn(_g("ma_penetration"), "pct") if _g("ma_penetration") else na,
-        ),
-        (
-            "Medicaid Enrollment & Penetration",
-            _fmt_fn(_g("medicaid_pct"), "pct") if _g("medicaid_pct") else na,
-        ),
-        (
-            "Medicare Discharges per 1,000 Beneficiaries",
-            _fmt_fn(_g("ip_stays_per_1k"), "num") if _g("ip_stays_per_1k") else na,
-        ),
-        ("Uninsured Rate", _fmt_fn(_g("uninsured_rate"), "pct") if _g("uninsured_rate") else na),
-        (
-            "Operating Margin",
-            _fmt_fn(_g("operating_margin_pct"), "pct") if _g("operating_margin_pct") else na,
-        ),
-        (
-            "Net Patient Service Revenue",
-            _fmt_fn(_g("net_patient_revenue"), "money") if _g("net_patient_revenue") else na,
-        ),
-        ("Market Consolidation Level (HHI)", hhi_label),
-    ]
-    for f in _TIER2_NA_FACTORS:
-        rows.append((f, na))
-    return rows
+# Column order for ZIP factor rows (merged from parquet + gpkg); extras append sorted.
+_ZIP_FACTOR_PREFERRED_KEYS = [
+    "zip_code",
+    "data_year",
+    "total_population",
+    "population_growth_rate_2yr",
+    "net_population_change_2yr",
+    "historical_year",
+    "age_0_17",
+    "age_18_44",
+    "age_45_64",
+    "age_65_plus",
+    "age_0_17_pct",
+    "age_18_44_pct",
+    "age_45_64_pct",
+    "age_65_plus_pct",
+    "median_age",
+    "white_alone",
+    "black_alone",
+    "asian_alone",
+    "hispanic_latino",
+    "white_pct",
+    "black_pct",
+    "asian_pct",
+    "hispanic_pct",
+    "median_household_income",
+    "bachelors_or_higher",
+    "bachelors_or_higher_pct",
+    "birth_rate_per_1000",
+    "in_migration_from_other_state",
+    "in_migration_rate",
+    "unemployed",
+    "unemployment_rate",
+    "per_capita_income",
+    "per_capita_income_growth_2yr",
+    "top_industry",
+    "top_industry_employment",
+    "industry_agriculture",
+    "industry_construction",
+    "industry_manufacturing",
+    "industry_retail",
+    "industry_finance",
+    "industry_professional_tech",
+    "industry_education_and_health",
+    "industry_arts_entertainment",
+    "industry_other_services",
+    "industry_public_administration",
+    "county_name",
+    "county_flips",
+    "state_fips",
+    "state_name",
+    "msa",
+    "msa_name",
+    "county_level_gdp_thousands",
+    "county_level_gdp_growth_5yr",
+    "gdp_year",
+    "msa_level_gdp_millions",
+    "msa_gdp_growth_5yr",
+    "msa_gdp_year",
+]
 
 
 def market_tab_html(
     selected: list[dict],
     entities_df=None,
     selected_option: str = "attractiveness_score_opt2",
-    tier_weights: dict | None = None,
 ) -> str:
     """Render the Market tab with aggregate metrics + per-ZIP entity detail."""
     count = len(selected)
@@ -434,39 +255,11 @@ def market_tab_html(
     avg_color = COLORMAP(avg_score)
 
     total_ent = sum(int(z.get("entity_count", 0)) for z in selected)
-    total_hosp = sum(int(z.get("hospital_count", 0)) for z in selected)
     avg_ent = total_ent / count
-    avg_hosp = total_hosp / count
-
-    hosp_by_type = {}
-    hosp_by_ownership = {}
-    avg_rating = None
-    emergency_count = 0
-    total_hospitals_with_data = 0
-    if entities_df is not None and len(entities_df) > 0:
-        hospitals = entities_df[entities_df.get("entity_type", pd.Series()) == "hospital"]
-        if len(hospitals) > 0:
-            total_hospitals_with_data = len(hospitals)
-            if "hospital_type" in hospitals.columns:
-                hosp_by_type = hospitals["hospital_type"].dropna().value_counts().head(5).to_dict()
-            if "ownership" in hospitals.columns:
-                hosp_by_ownership = (
-                    hospitals["ownership"].dropna().value_counts().head(5).to_dict()
-                )
-            if "hospital_rating" in hospitals.columns:
-                ratings = pd.to_numeric(hospitals["hospital_rating"], errors="coerce").dropna()
-                if len(ratings) > 0:
-                    avg_rating = ratings.mean()
-            if "emergency_services" in hospitals.columns:
-                emergency_count = (
-                    hospitals["emergency_services"].astype(str).str.lower() == "yes"
-                ).sum()
-
-    title_html = ""
 
     score_box = (
         f'<div class="market-detail-block">'
-        f"{_market_framework_html(selected, selected_option=selected_option, tier_weights=tier_weights)}"
+        f"{_market_framework_html(selected, selected_option=selected_option)}"
         f'<div style="text-align:center;padding:6px 10px;">'
         f'<div style="font-size:0.6rem;color:#1a1a1a;">Average Market Score</div>'
         f'<div class="market-score-value" style="--ms-color:{avg_color};font-size:1.4rem;font-weight:800;line-height:1.2;">'
@@ -482,177 +275,7 @@ def market_tab_html(
     score_box += "</table>"
     score_box += '<div style="margin-top:8px;"></div>'
 
-    def _avg(key, skip_negative=False):
-        vals = [float(z.get(key, 0) or 0) for z in selected]
-        if skip_negative:
-            vals = [v for v in vals if v > 0]
-        return sum(vals) / len(vals) if vals else None
-
-    def _fmt_val(val, fmt="num", prefix="", suffix=""):
-        if val is None or val == 0:
-            return '<span style="color:#1a1a1a;">N/A</span>'
-        if fmt == "int":
-            return f"{prefix}{int(val):,}{suffix}"
-        if fmt == "pct":
-            return f"{val:.1f}%"
-        if fmt == "pct_signed":
-            color = "#22c55e"
-            return f'<span style="color:{color};">{val:+.1f}%</span>'
-        if fmt == "money":
-            if val < 0:
-                return '<span style="color:#1a1a1a;">N/A</span>'
-            return f"${int(val):,}"
-        if fmt == "rate":
-            return f"{val:.0f}/1,000"
-        if fmt == "str":
-            return (
-                str(val)
-                if val and str(val) != "Unknown"
-                else '<span style="color:#1a1a1a;">N/A</span>'
-            )
-        return f"{val:.1f}"
-
     from collections import Counter
-
-    _TIER1_ALIASES = {
-        "zip_code": ("zipcode", "zip"),
-        "county_flips": ("county_fips",),
-        "state_name": ("state", "state_abbr"),
-        "white_pct": ("pct_white",),
-        "black_pct": ("pct_black",),
-        "asian_pct": ("pct_asian",),
-        "hispanic_pct": ("pct_hispanic",),
-        "in_migration_rate": ("in_migration_pct",),
-        "in_migration_pct": ("in_migration_rate",),
-        "birth_rate_per_1000": ("birth_rate",),
-        "top_industry_employment": ("top_industry_employee_count",),
-    }
-
-    def _tier1_get(row, key):
-        if key in row and row.get(key) not in (None, "", "nan", "None"):
-            return row.get(key)
-        for alt in _TIER1_ALIASES.get(key, ()):
-            if alt in row and row.get(alt) not in (None, "", "nan", "None"):
-                return row.get(alt)
-        # Fallback: normalized lookup by collapsing underscores/case.
-        nk = str(key).replace("_", "").lower()
-        for rk, rv in row.items():
-            if str(rk).replace("_", "").lower() == nk and rv not in (None, "", "nan", "None"):
-                return rv
-        return row.get(key)
-
-    def _to_num(raw):
-        if raw is None:
-            return None
-        if isinstance(raw, (int, float)):
-            return float(raw)
-        s = str(raw).strip()
-        if not s or s.lower() in ("nan", "none", "null"):
-            return None
-        # normalize common formatted strings like "$35,575", "6.1%", "39/1,000"
-        s = s.replace("$", "").replace(",", "").replace("%", "")
-        s = s.replace("/1000", "").replace("/1,000", "")
-        try:
-            return float(s)
-        except (TypeError, ValueError):
-            return None
-
-    def _avg_num(key):
-        vals = []
-        for z in selected:
-            v = _to_num(_tier1_get(z, key))
-            if v is not None and v == v:
-                vals.append(v)
-        return (sum(vals) / len(vals)) if vals else None
-
-    def _mode_str(key):
-        vals = [
-            str(_tier1_get(z, key)).strip()
-            for z in selected
-            if _tier1_get(z, key) not in (None, "", "nan", "None")
-        ]
-        return Counter(vals).most_common(1)[0][0] if vals else None
-
-    def _fmt_t1(raw, fmt):
-        if fmt == "str":
-            return _fmt_val(raw, "str")
-        try:
-            num = float(raw)
-        except (TypeError, ValueError):
-            num = None
-        if num is None:
-            return '<span style="color:#1a1a1a;">N/A</span>'
-        if fmt == "int":
-            return f"{int(round(num)):,}"
-        if fmt == "pct":
-            return f"{num:.1f}%"
-        if fmt == "pct_signed":
-            return f"{num:+.1f}%"
-        if fmt == "money":
-            return f"${int(round(num)):,}"
-        if fmt == "rate":
-            return f"{num:.0f}/1,000"
-        return f"{num:.1f}"
-
-    tier1_specs = [
-        ("ZIP Code", "zip_code", "str", "mode"),
-        ("Data Year", "data_year", "int", "mode"),
-        ("Total Population", "total_population", "int", "avg"),
-        ("Population Growth Rate (2yr)", "population_growth_rate_2yr", "pct_signed", "avg"),
-        ("Net Population Change (2yr)", "net_population_change_2yr", "int", "avg"),
-        ("Historical Year", "historical_year", "int", "mode"),
-        ("Age 0-17", "age_0_17", "int", "avg"),
-        ("Age 18-44", "age_18_44", "int", "avg"),
-        ("Age 45-64", "age_45_64", "int", "avg"),
-        ("Age 65+", "age_65_plus", "int", "avg"),
-        ("Age 0-17 %", "age_0_17_pct", "pct", "avg"),
-        ("Age 18-44 %", "age_18_44_pct", "pct", "avg"),
-        ("Age 45-64 %", "age_45_64_pct", "pct", "avg"),
-        ("Age 65+ %", "age_65_plus_pct", "pct", "avg"),
-        ("Median Age", "median_age", "num", "avg"),
-        ("White Alone", "white_alone", "int", "avg"),
-        ("Black Alone", "black_alone", "int", "avg"),
-        ("Asian Alone", "asian_alone", "int", "avg"),
-        ("Hispanic Latino", "hispanic_latino", "int", "avg"),
-        ("White %", "white_pct", "pct", "avg"),
-        ("Black %", "black_pct", "pct", "avg"),
-        ("Asian %", "asian_pct", "pct", "avg"),
-        ("Hispanic %", "hispanic_pct", "pct", "avg"),
-        ("Median Household Income", "median_household_income", "money", "avg"),
-        ("Bachelors or Higher", "bachelors_or_higher", "int", "avg"),
-        ("Bachelors or Higher %", "bachelors_or_higher_pct", "pct", "avg"),
-        ("Birth Rate per 1,000", "birth_rate_per_1000", "rate", "avg"),
-        ("In-Migration from Other State", "in_migration_from_other_state", "int", "avg"),
-        ("In-Migration Rate", "in_migration_rate", "pct", "avg"),
-        ("Unemployed", "unemployed", "int", "avg"),
-        ("Unemployment Rate", "unemployment_rate", "pct", "avg"),
-        ("Per Capita Income", "per_capita_income", "money", "avg"),
-        ("Per Capita Income Growth (2yr)", "per_capita_income_growth_2yr", "pct_signed", "avg"),
-        ("Top Industry", "top_industry", "str", "mode"),
-        ("Top Industry Employment", "top_industry_employment", "int", "avg"),
-        ("Industry Agriculture", "industry_agriculture", "int", "avg"),
-        ("Industry Construction", "industry_construction", "int", "avg"),
-        ("Industry Manufacturing", "industry_manufacturing", "int", "avg"),
-        ("Industry Retail", "industry_retail", "int", "avg"),
-        ("Industry Finance", "industry_finance", "int", "avg"),
-        ("Industry Professional/Tech", "industry_professional_tech", "int", "avg"),
-        ("Industry Education & Health", "industry_education_and_health", "int", "avg"),
-        ("Industry Arts & Entertainment", "industry_arts_entertainment", "int", "avg"),
-        ("Industry Other Services", "industry_other_services", "int", "avg"),
-        ("Industry Public Administration", "industry_public_administration", "int", "avg"),
-        ("County Name", "county_name", "str", "mode"),
-        ("County FIPS", "county_flips", "str", "mode"),
-        ("State FIPS", "state_fips", "str", "mode"),
-        ("State Name", "state_name", "str", "mode"),
-        ("MSA (Yes/No)", "msa", "str", "mode"),
-        ("MSA Name", "msa_name", "str", "mode"),
-        ("County-level GDP (thousands)", "county_level_gdp_thousands", "money", "avg"),
-        ("County GDP Growth (5yr)", "county_level_gdp_growth_5yr", "pct_signed", "avg"),
-        ("GDP Year", "gdp_year", "int", "mode"),
-        ("MSA-level GDP (millions)", "msa_level_gdp_millions", "money", "avg"),
-        ("MSA GDP Growth (5yr)", "msa_gdp_growth_5yr", "pct_signed", "avg"),
-        ("MSA GDP Year", "msa_gdp_year", "int", "mode"),
-    ]
 
     na = '<span style="color:#1a1a1a;">N/A</span>'
 
@@ -681,8 +304,6 @@ def market_tab_html(
             "avg_confidence",
             "hospital_potential",
             "tier1",
-            "tier2",
-            "tier3",
         }
         if k in excluded:
             return False
@@ -725,7 +346,7 @@ def market_tab_html(
             return f"{int(round(num)):,}"
         return f"{num:.1f}"
 
-    preferred = [k for _, k, _, _ in tier1_specs]
+    preferred = _ZIP_FACTOR_PREFERRED_KEYS
     key_union = []
     seen = set()
     for row in selected:
@@ -756,28 +377,21 @@ def market_tab_html(
     if not all_rows_agg:
         all_rows_agg = [("No parquet factors found", na)]
 
-    # User preference: parquet-driven factors should only appear in Tier 1.
-    tier1_rows = all_rows_agg
-    tier2_factors = []
-    tier3_rows = []
-
-    def _tier_dropdown(title, rows, open_default=False):
+    def _factor_dropdown(title, rows, open_default=False):
         tid = title.lower().replace(" ", "_")
         open_attr = " open" if open_default else ""
-        html = (
+        frag = (
             f'<details class="tier-dropdown" data-tier="{tid}"{open_attr}>'
             f'<summary class="tier-dropdown-summary">{title}</summary>'
             f'<div class="tier-dropdown-content">'
             f'<table style="width:100%;font-size:0.7rem;border-collapse:collapse;table-layout:fixed;">'
         )
         for label, val in rows:
-            html += _row(label, val)
-        html += "</table></div></details>"
-        return html
+            frag += _row(label, val)
+        frag += "</table></div></details>"
+        return frag
 
     score_box += "</div></div>"
-
-    header = ""
 
     items = ""
     for zd in selected:
@@ -788,9 +402,10 @@ def market_tab_html(
         ent_count = int(zd.get("entity_count", 0) or 0)
         hosp_count = int(zd.get("hospital_count", 0) or 0)
         row_pairs = [(_pretty_col(k), _fmt_dynamic(k, zd.get(k))) for k in ordered_keys]
-        zt1 = _tier_dropdown("Tier 1", row_pairs if row_pairs else [("No parquet factors found", na)])
-        zt2 = _tier_dropdown("Tier 2", [])
-        zt3 = _tier_dropdown("Tier 3", [])
+        factors_dd = _factor_dropdown(
+            "ZIP-level factors",
+            row_pairs if row_pairs else [("No parquet factors found", na)],
+        )
 
         opt_suffix = str(selected_option or "").strip().split("_")[-1] if selected_option else "opt2"
         if opt_suffix not in {"opt1", "opt2", "opt4"}:
@@ -922,7 +537,7 @@ def market_tab_html(
             f'{_row("Hospitals", f"{hosp_count:,}", "#22c55e")}'
             f"</table>"
             f'<div style="margin-top:6px;"></div>'
-            f"{hosp_dropdown}{zt1}{zt2}{zt3}"
+            f"{hosp_dropdown}{factors_dd}"
             f"</div></details></li>"
         )
 
@@ -946,15 +561,7 @@ def market_tab_html(
 })();
 </script>"""
 
-    return f'{title_html}{score_box}{header}<ul class="market-zip-list">{items}</ul>{persist_js}'
-
-
-def _section_header(title: str) -> str:
-    return (
-        f'<tr><td colspan="2" style="padding:4px 0 1px;font-size:0.62rem;'
-        f'color:#1a1a1a;text-transform:uppercase;letter-spacing:0.03em;">'
-        f"{title}</td></tr>"
-    )
+    return f"{score_box}<ul class=\"market-zip-list\">{items}</ul>{persist_js}"
 
 
 def _row(label: str, value: str, color: str = "#1a1a1a") -> str:
@@ -964,10 +571,3 @@ def _row(label: str, value: str, color: str = "#1a1a1a") -> str:
         f'<td style="text-align:right;font-weight:600;color:{color};padding:3px 0;'
         f'font-size:0.7rem;width:34%;white-space:nowrap;">{value}</td></tr>'
     )
-
-
-def _score_color(score: float) -> str:
-    ratio = max(0, min(score, 100)) / 100.0
-    g = int(255 - ratio * (255 - 127))
-    b = int(255 - ratio * 255)
-    return f"rgb(255,{g},{b})"

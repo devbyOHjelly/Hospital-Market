@@ -14,12 +14,10 @@ from .agent_config import (
     WHATIF_KEYWORDS,
 )
 
-
 def _normalize_zip(z: Any) -> str:
     s = str(z or "").strip()
     digits = "".join(ch for ch in s if ch.isdigit())
     return digits.zfill(5) if digits else s
-
 
 def _render_structured_response(
     headline: str,
@@ -40,7 +38,6 @@ def _render_structured_response(
         f"{followup_lines}"
     )
 
-
 def _extract_score_column(q: str) -> str:
     ql = (q or "").lower()
     for alias, col in OPTION_ALIASES.items():
@@ -48,21 +45,17 @@ def _extract_score_column(q: str) -> str:
             return col
     return DEFAULT_SCORE_COLUMN
 
-
 def _explicit_option_requested(q: str) -> bool:
     ql = (q or "").lower()
     return any(alias in ql for alias in OPTION_ALIASES.keys())
 
-
 def _canonicalize_question(q: str) -> str:
     ql = (q or "").lower()
-    # Notebook/user typo variants.
     ql = ql.replace("attractiness", "attractiveness")
     ql = ql.replace("attractivness", "attractiveness")
     ql = ql.replace("stage of", "state of")
     ql = ql.replace("avreage", "average")
     return ql
-
 
 def _extract_option_label(score_col: str) -> str:
     if score_col == "attractiveness_score_opt1":
@@ -72,7 +65,6 @@ def _extract_option_label(score_col: str) -> str:
     if score_col == "attractiveness_score_opt4":
         return "Option 4"
     return DEFAULT_SCORE_OPTION.title()
-
 
 def _compute_weighted_score(df: pd.DataFrame, score_col: str) -> pd.Series | None:
     score_def = SCORE_DEFINITIONS.get(score_col) or {}
@@ -90,7 +82,6 @@ def _compute_weighted_score(df: pd.DataFrame, score_col: str) -> pd.Series | Non
         return None
     return pd.to_numeric(weighted, errors="coerce").fillna(0.0).round(2)
 
-
 def _ensure_score_columns(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or len(df) == 0:
         return df
@@ -103,14 +94,11 @@ def _ensure_score_columns(df: pd.DataFrame) -> pd.DataFrame:
             out[score_col] = computed
     return out
 
-
 def _state_from_question(q: str) -> str | None:
-    # Backwards-compatible shim; prefer _state_from_question_dynamic which uses the dataset.
     for s in ("alabama", "florida", "georgia"):
         if s in q:
             return s.title()
     return None
-
 
 def _state_from_question_dynamic(df: pd.DataFrame, q: str) -> str | None:
     """
@@ -140,14 +128,11 @@ def _state_from_question_dynamic(df: pd.DataFrame, q: str) -> str | None:
         )
     except Exception:
         return None
-    # Prefer longest names first to avoid partial matches (e.g. "New York" vs "York").
     vals = sorted({v for v in vals if v}, key=lambda x: len(x), reverse=True)
     for v in vals:
         if v.lower() in ql:
             return v
-    # Fall back to earlier hard-coded approach for safety.
     return _state_from_question(ql)
-
 
 def _resolve_score_component_column(df: pd.DataFrame, comp_col: str) -> str | None:
     """
@@ -156,23 +141,19 @@ def _resolve_score_component_column(df: pd.DataFrame, comp_col: str) -> str | No
     """
     if comp_col in df.columns:
         return comp_col
-    # If the definition references a raw column, map it to its pctile column when available.
     mapped = RAW_TO_PCTILE.get(comp_col)
     if mapped and mapped in df.columns:
         return mapped
     return None
-
 
 def _format_pct(v: Any) -> str:
     try:
         x = float(pd.to_numeric(v, errors="coerce"))
         if pd.isna(x):
             return "N/A"
-        # Many of these are 0-100 style percentiles; display as-is.
         return f"{x:.1f}"
     except Exception:
         return "N/A"
-
 
 def _rank_position_desc(values: pd.Series, idx: Any) -> int | None:
     """1 = highest. Ties share rank via dense ranking."""
@@ -186,7 +167,6 @@ def _rank_position_desc(values: pd.Series, idx: Any) -> int | None:
         return int(ranks.loc[idx])
     except Exception:
         return None
-
 
 def _msa_weighted_scores(df: pd.DataFrame, score_col: str) -> pd.DataFrame:
     if "msa_name" not in df.columns:
@@ -215,7 +195,6 @@ def _msa_weighted_scores(df: pd.DataFrame, score_col: str) -> pd.DataFrame:
     out = w.groupby("msa_name", dropna=True).apply(_agg).reset_index()
     return out
 
-
 def _msa_mean_scores(df: pd.DataFrame, score_col: str) -> pd.DataFrame:
     if "msa_name" not in df.columns:
         return pd.DataFrame()
@@ -239,11 +218,9 @@ def _msa_mean_scores(df: pd.DataFrame, score_col: str) -> pd.DataFrame:
         out["state"] = ""
     return out
 
-
 def _prefers_mean_average(q: str) -> bool:
     ql = (q or "").lower()
     return ("on average" in ql) or ("average attractiveness" in ql) or ("avg attractiveness" in ql)
-
 
 def _resolve_msa_name(grouped: pd.DataFrame, raw_name: str) -> str | None:
     if len(grouped) == 0:
@@ -260,7 +237,6 @@ def _resolve_msa_name(grouped: pd.DataFrame, raw_name: str) -> str | None:
         return str(contains.iloc[0]["msa_name"])
     return None
 
-
 def _ranked_msa_lines(grouped: pd.DataFrame, score_col: str, limit: int = 14) -> list[str]:
     ranked = grouped.sort_values(score_col, ascending=False).head(limit)
     out: list[str] = []
@@ -268,10 +244,8 @@ def _ranked_msa_lines(grouped: pd.DataFrame, score_col: str, limit: int = 14) ->
         out.append(f"{str(row['msa_name'])}: {float(row[score_col]):.2f}")
     return out
 
-
 def _score_column_for_question(df: pd.DataFrame, q: str) -> str:
     col = _extract_score_column(q)
-    # If user explicitly asks for an option, do not silently downgrade to hospital_potential.
     if _explicit_option_requested(q):
         return col
     if col in df.columns:
@@ -279,7 +253,6 @@ def _score_column_for_question(df: pd.DataFrame, q: str) -> str:
     if "hospital_potential" in df.columns:
         return "hospital_potential"
     return col
-
 
 def _handle_top_msa_average_by_option(df: pd.DataFrame, q_raw: str, q: str) -> str | None:
     if "msa" not in q or "average" not in q:
@@ -321,7 +294,6 @@ def _handle_top_msa_average_by_option(df: pd.DataFrame, q_raw: str, q: str) -> s
         implication="This MSA should move to active diligence under the selected option methodology.",
     )
 
-
 def _handle_methodology_questions(q: str) -> str | None:
     asks_formula = any(
         k in q for k in (
@@ -349,7 +321,6 @@ def _handle_methodology_questions(q: str) -> str | None:
         ],
         implication="Decision quality improves when you explicitly specify Option 1, Option 2, or Option 4 for every comparison.",
     )
-
 
 def _handle_surface_query(df: pd.DataFrame, q_raw: str, q: str) -> str | None:
     if len(df) == 0:
@@ -390,7 +361,6 @@ def _handle_surface_query(df: pd.DataFrame, q_raw: str, q: str) -> str | None:
             implication="This market is the first candidate for deeper diligence, competitor mapping, and service-line fit validation.",
         )
 
-    # ZIP-level best market score / potential.
     if any(k in q for k in ("best", "highest", "top")) and (
         ("market score" in q) or ("market potential" in q) or ("hospital potential" in q)
     ) and ("zip" in q):
@@ -412,7 +382,6 @@ def _handle_surface_query(df: pd.DataFrame, q_raw: str, q: str) -> str | None:
             implication="This ZIP should be prioritized for service-demand validation and local competitor pressure analysis.",
         )
 
-    # ZIP-level highest 65+ signal.
     if any(k in q for k in ("highest", "best", "top")) and ("zip" in q) and (
         ("65+" in q) or ("65 plus" in q) or ("age 65" in q) or ("65-year" in q) or ("seniors" in q)
     ):
@@ -437,7 +406,6 @@ def _handle_surface_query(df: pd.DataFrame, q_raw: str, q: str) -> str | None:
         st_name = str(scoped.loc[idx, "state"]) if "state" in scoped.columns else ""
         return f"ZIP {z}{(' (' + st_name + ')') if st_name else ''} is highest on {metric_label} at {float(s.loc[idx]):.2f}."
 
-    # 1) Highest population growth rate ZIP.
     if "highest" in q and "population growth rate" in q:
         col = "population_growth_rate_2yr" if "population_growth_rate_2yr" in df.columns else None
         if col is None:
@@ -458,7 +426,6 @@ def _handle_surface_query(df: pd.DataFrame, q_raw: str, q: str) -> str | None:
             implication="If this growth is sustained and real, this ZIP is a strong candidate for near-term market-entry analysis.",
         )
 
-    # 2) Highest attractiveness score (option X), commonly zip or msa in notebook tests.
     if any(k in q for k in ("highest", "best", "top")) and "attractiveness" in q:
         score_col = _score_column_for_question(df, q)
         s = pd.to_numeric(df.get(score_col), errors="coerce")
@@ -468,7 +435,6 @@ def _handle_surface_query(df: pd.DataFrame, q_raw: str, q: str) -> str | None:
         if len(scoped) == 0 or not s.notna().any():
             return None
 
-        # MSA question.
         if "msa" in q and "average" in q and "msa_name" in scoped.columns:
             grouped = _msa_mean_scores(scoped, score_col) if _prefers_mean_average(q) else _msa_weighted_scores(scoped, score_col)
             if st and "state" in grouped.columns:
@@ -490,7 +456,6 @@ def _handle_surface_query(df: pd.DataFrame, q_raw: str, q: str) -> str | None:
                 implication="This MSA should be treated as the lead expansion candidate under the selected scoring option.",
             )
 
-        # ZIP question default.
         idx = s.idxmax()
         z = _normalize_zip(scoped.loc[idx, "zipcode"]) if "zipcode" in scoped.columns else "N/A"
         st_name = str(scoped.loc[idx, "state"]) if "state" in scoped.columns else ""
@@ -506,10 +471,8 @@ def _handle_surface_query(df: pd.DataFrame, q_raw: str, q: str) -> str | None:
             implication="This ZIP is the top-ranked target under the requested evaluation method.",
         )
 
-    # 3) Average attractiveness for a named MSA.
     if "average attractiveness" in q and "msa" in q and "for" in q and "msa_name" in df.columns:
         score_col = _score_column_for_question(df, q)
-        # Match "for [the] <name> MSA" or "for <name> MSA" — strip leading articles
         m = re.search(r"for\s+(?:the\s+)?(.+?)\s+msa", q_raw, flags=re.IGNORECASE)
         if not m:
             return None
@@ -553,12 +516,10 @@ def _handle_surface_query(df: pd.DataFrame, q_raw: str, q: str) -> str | None:
 
     return None
 
-
 def _handle_comparison(df: pd.DataFrame, q: str) -> str | None:
     if not any(k in q for k in ("compare", " vs ", " versus ", "difference")):
         return None
 
-    # MSA comparison first.
     if "msa" in q and "msa_name" in df.columns:
         score_col = _score_column_for_question(df, q)
         grouped = _msa_weighted_scores(df, score_col)
@@ -584,7 +545,6 @@ def _handle_comparison(df: pd.DataFrame, q: str) -> str | None:
             b_val = float(grouped[grouped["msa_name"] == b_name][score_col].iloc[0])
             better = a_name if a_val >= b_val else b_name
             diff = abs(a_val - b_val)
-            # Rank positions within the same scope.
             ranks = pd.to_numeric(grouped[score_col], errors="coerce").rank(ascending=False, method="dense")
             a_rank = int(ranks[grouped["msa_name"] == a_name].iloc[0]) if (grouped["msa_name"] == a_name).any() else None
             b_rank = int(ranks[grouped["msa_name"] == b_name].iloc[0]) if (grouped["msa_name"] == b_name).any() else None
@@ -599,7 +559,6 @@ def _handle_comparison(df: pd.DataFrame, q: str) -> str | None:
                 implication="The higher-scoring market is the better short-list candidate under the selected scoring option.",
             )
 
-    # ZIP comparison: prefer attractiveness when requested; otherwise default to hospital_potential.
     if "zipcode" not in df.columns and "zip" not in q:
         return None
     zips = re.findall(r"\b\d{5}\b", q)
@@ -638,7 +597,6 @@ def _handle_comparison(df: pd.DataFrame, q: str) -> str | None:
     if len(rows) == 0:
         return None
 
-    # ZIPs can appear multiple times; compare on mean.
     a = float(pd.to_numeric(rows[rows["zip_key"] == z1][metric_col], errors="coerce").mean())
     b = float(pd.to_numeric(rows[rows["zip_key"] == z2][metric_col], errors="coerce").mean())
     if pd.isna(a) or pd.isna(b):
@@ -646,7 +604,6 @@ def _handle_comparison(df: pd.DataFrame, q: str) -> str | None:
     better = z1 if a >= b else z2
     diff = abs(a - b)
 
-    # Rank each ZIP within scope (dense rank, 1=best).
     zip_scores = (
         w.groupby("zip_key", dropna=True)[metric_col]
         .apply(lambda s: pd.to_numeric(s, errors="coerce").mean())
@@ -665,12 +622,10 @@ def _handle_comparison(df: pd.DataFrame, q: str) -> str | None:
         implication="The higher-scoring ZIP is the stronger candidate under the selected comparison metric.",
     )
 
-
 def _handle_explanation(df: pd.DataFrame, q: str) -> str | None:
     if not any(k in q for k in ("why", "what makes", "explain", "reason", "factor", "drive", "cause")):
         return None
     if "highest attractiveness" in q or "highest" in q or ("highest ranking" in q):
-        # Explanation is primarily used in the notebook for "top ZIP under option X, and why".
         score_col = _score_column_for_question(df, q)
         if score_col not in df.columns:
             return None
@@ -691,7 +646,6 @@ def _handle_explanation(df: pd.DataFrame, q: str) -> str | None:
         z = _normalize_zip(scoped.loc[idx, "zipcode"]) if "zipcode" in scoped.columns else "N/A"
         top_score = float(s.loc[idx])
 
-        # Build factor bullets like the notebook demo: component percentile vs dataset average.
         comp_defs = SCORE_DEFINITIONS.get(score_col, {}).get("components", {}) or {}
         comp_bullets: list[str] = []
         weakest = None
@@ -731,7 +685,6 @@ def _handle_explanation(df: pd.DataFrame, q: str) -> str | None:
         )
     return None
 
-
 def try_handle_query(df: pd.DataFrame, user_question: str) -> str | None:
     q_raw = (user_question or "").strip()
     q = _canonicalize_question(q_raw)
@@ -740,8 +693,6 @@ def try_handle_query(df: pd.DataFrame, user_question: str) -> str | None:
     df = _ensure_score_columns(df)
 
     if any(k in q for k in WHATIF_KEYWORDS):
-        # Keep routing explicit: if "what-if" is asked, the model path can synthesize narrative.
-        # The deterministic router still ensures all option scores are present in context.
         _ = _ensure_score_columns(df)
         return None
 
@@ -753,7 +704,6 @@ def try_handle_query(df: pd.DataFrame, user_question: str) -> str | None:
     if top_msa_avg_reply:
         return top_msa_avg_reply
 
-    # Notebook-like routing order: explanation/comparison/surface.
     for handler in (_handle_explanation, _handle_comparison):
         out = handler(df, q)
         if out:

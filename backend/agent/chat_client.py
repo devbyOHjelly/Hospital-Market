@@ -8,7 +8,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import requests
-
 from .agent_config import (
     CHAT_MAX_TOKENS,
     CHAT_TEMPERATURE,
@@ -23,11 +22,9 @@ from .agent_config import (
     WHATIF_KEYWORDS,
 )
 
-# ── OpenRouter settings ────────────────────────────────────────────────────────
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct"
 
-# System prompt used for the final narrative answer step (matches the notebook exactly)
 _EXECUTIVE_SYSTEM_PROMPT = (
     "You are a strategic healthcare market analyst for Orlando Health, writing for senior "
     "executives. Every response MUST follow this exact structure:\n"
@@ -39,9 +36,6 @@ _EXECUTIVE_SYSTEM_PROMPT = (
     "use colons and semicolons to separate clauses, never dashes."
 )
 
-
-# ── Helpers ────────────────────────────────────────────────────────────────────
-
 class _NumpyEncoder(json.JSONEncoder):
     """Converts numpy int64/float64/ndarray to native Python types for json.dumps."""
     def default(self, obj: Any) -> Any:
@@ -52,7 +46,6 @@ class _NumpyEncoder(json.JSONEncoder):
         if isinstance(obj, np.ndarray):
             return obj.tolist()
         return super().default(obj)
-
 
 def _read_env_file() -> dict[str, str]:
     """Read simple KEY=VALUE pairs from project .env (if present)."""
@@ -77,7 +70,6 @@ def _read_env_file() -> dict[str, str]:
         return {}
     return env
 
-
 def _get_token_and_model(api_key: str, model: str) -> tuple[str, str]:
     """Resolve OpenRouter API key and model from args, then env var, then .env file."""
     env_file = _read_env_file()
@@ -98,7 +90,6 @@ def _get_token_and_model(api_key: str, model: str) -> tuple[str, str]:
         or (model or OPENROUTER_DEFAULT_MODEL).strip()
     )
     return token, resolved_model
-
 
 def _call_openrouter(
     *,
@@ -129,7 +120,7 @@ def _call_openrouter(
         headers=headers,
         data=json.dumps(body),
         timeout=timeout_seconds,
-        verify=False,  # bypasses corporate SSL proxy self-signed cert errors
+        verify=False,  
     )
     result = resp.json()
 
@@ -152,11 +143,7 @@ def _call_openrouter(
         raise RuntimeError(f"OpenRouter returned no choices. Payload: {str(result)[:400]}")
     return (choices[0].get("message") or {}).get("content", "").strip()
 
-
-# ── Step helpers mirroring the notebook pattern ───────────────────────────────
-
 def _schema_context(df: pd.DataFrame) -> str:
-    """Build the schema + sample + stats string passed to the code-generation LLM."""
     return (
         f"You have access to a pandas DataFrame called `df` with the following structure:\n\n"
         f"COLUMNS:\n{df.dtypes.to_string()}\n\n"
@@ -164,7 +151,6 @@ def _schema_context(df: pd.DataFrame) -> str:
         f"SAMPLE (first 3 rows):\n{df.head(3).to_csv(index=False)}\n\n"
         f"STATISTICS:\n{df.describe().to_string()}"
     )
-
 
 def _generate_pandas_code(
     df: pd.DataFrame,
@@ -204,7 +190,6 @@ def _execute_pandas_code(df: pd.DataFrame, generated_code: str) -> Any:
     Returns whatever the code stored in `result`, or an error string.
     """
     code = re.sub(r"```(?:python)?", "", generated_code).replace("```", "").strip()
-    # Include builtins + common libraries so generated code never hits NameError
     exec_globals: dict[str, Any] = {
         "__builtins__": __builtins__,
         "pd": pd,
@@ -215,11 +200,10 @@ def _execute_pandas_code(df: pd.DataFrame, generated_code: str) -> Any:
     }
     exec_locals: dict[str, Any] = {"df": df}
     try:
-        exec(code, exec_globals, exec_locals)  # noqa: S102
+        exec(code, exec_globals, exec_locals)
         return exec_locals.get("result", exec_globals.get("result", "No result variable found."))
     except Exception as exc:
         return f"Code execution error: {exc}"
-
 
 def _narrative_answer(
     user_question: str,
@@ -253,7 +237,6 @@ def _narrative_answer(
         timeout_seconds=timeout_seconds,
     )
 
-
 def _execute_llm_generated_code(
     df: pd.DataFrame,
     user_question: str,
@@ -269,9 +252,6 @@ def _execute_llm_generated_code(
     generated_code = _generate_pandas_code(df, user_question, token, model, timeout_seconds)
     result = _execute_pandas_code(df, generated_code)
     return _narrative_answer(user_question, result, token, model, timeout_seconds)
-
-
-# ── Intent classifier ─────────────────────────────────────────────────────────
 
 def _classify_intent(
     user_question: str,
@@ -338,9 +318,6 @@ def _classify_intent(
             "needs_ranking_first": False,
         }
 
-
-# ── Explanation engine ────────────────────────────────────────────────────────
-
 def _explain_attractiveness_score(
     df: pd.DataFrame,
     user_question: str,
@@ -392,7 +369,6 @@ def _explain_attractiveness_score(
         target_row  = grouped[mask].iloc[0]
         target_name = target_row[geo_col]
 
-    # Build component comparison vs dataset benchmarks
     component_analysis = []
     for col, meta in score_def["components"].items():
         if col not in grouped.columns:
@@ -443,9 +419,6 @@ def _explain_attractiveness_score(
         temperature=0.3,
         timeout_seconds=timeout_seconds,
     )
-
-
-# ── Comparison engine ─────────────────────────────────────────────────────────
 
 def _handle_comparison(
     df: pd.DataFrame,
@@ -540,9 +513,6 @@ def _handle_comparison(
         timeout_seconds=timeout_seconds,
     )
 
-
-# ── What-If engine ────────────────────────────────────────────────────────────
-
 def _detect_whatif_scenario(
     user_question: str,
     df: pd.DataFrame,
@@ -588,7 +558,6 @@ def _detect_whatif_scenario(
     except Exception:
         return {"is_whatif": False, "changes": []}
 
-
 def _apply_whatif_scenario(df: pd.DataFrame, scenario: dict[str, Any]) -> pd.DataFrame:
     """Mirrors apply_whatif_scenario() from the notebook."""
     df_out  = df.copy()
@@ -600,7 +569,6 @@ def _apply_whatif_scenario(df: pd.DataFrame, scenario: dict[str, Any]) -> pd.Dat
         col       = change["column"]
         operation = change["operation"]
         value     = change["value"]
-        # Auto-resolve percentile col -> raw col
         if col.endswith("_pctile"):
             col = next((r for r, p in RAW_TO_PCTILE.items() if p == col), col)
         if col not in df_out.columns:
@@ -615,7 +583,6 @@ def _apply_whatif_scenario(df: pd.DataFrame, scenario: dict[str, Any]) -> pd.Dat
         elif operation == "set":
             df_out.loc[mask, col] = value
     return df_out
-
 
 def _rescore_after_scenario(
     df_original: pd.DataFrame,
@@ -651,7 +618,6 @@ def _rescore_after_scenario(
     )
     df_rescored[score_col] = (weighted_sum / 99 * 100).round(2)
     return df_rescored
-
 
 def _handle_whatif(
     df: pd.DataFrame,
@@ -742,12 +708,9 @@ def _handle_whatif(
         timeout_seconds=timeout_seconds,
     )
 
-
-# ── Public entry point ────────────────────────────────────────────────────────
-
 def query_agent(
     *,
-    endpoint: str = "",          # unused; kept for call-site compatibility
+    endpoint: str = "",         
     api_key: str = "",
     user_message: str,
     history: list[dict[str, str]] | None = None,
@@ -767,18 +730,15 @@ def query_agent(
     """
     token, resolved_model = _get_token_and_model(api_key, model)
 
-    # ── DataFrame path: full notebook agentic pattern ─────────────────────────
     if df is not None and not df.empty:
-        from .query_router import _ensure_score_columns  # avoid circular import
+        from .query_router import _ensure_score_columns
         df = _ensure_score_columns(df)
 
-        # Step 0: what-if routing (highest priority)
         if any(kw in user_message.lower() for kw in WHATIF_KEYWORDS):
             scenario = _detect_whatif_scenario(user_message, df, token, resolved_model, timeout_seconds)
             if scenario.get("is_whatif") and scenario.get("changes"):
                 return _handle_whatif(df, user_message, scenario, token, resolved_model, timeout_seconds)
 
-        # Step 1: classify intent
         intent = _classify_intent(user_message, token, resolved_model, timeout_seconds)
         intent_type = intent.get("intent", "surface_query")
 
@@ -791,12 +751,10 @@ def query_agent(
                 df, user_message, intent, token, resolved_model, timeout_seconds
             )
         else:
-            # surface_query: 3-step code-generate -> execute -> narrate
             return _execute_llm_generated_code(
                 df, user_message, token, resolved_model, timeout_seconds
             )
 
-    # ── Context-only fallback (no DataFrame supplied) ─────────────────────────
     ctx = context or {}
     system_prompt = (
         f"{SYSTEM_BEHAVIOR}\n"

@@ -1,12 +1,47 @@
 import json
 import os
+import shutil
 import time
 import re
+import zlib
 import numpy as np
 import folium
 import pandas as pd
 import geopandas as gpd
-from frontend.config import COLORMAP, WWW_DIR
+from frontend.config import APP_DIR, COLORMAP, WWW_DIR
+
+# Served next to map.html for selected ZIP fill (synced from frontend/image/).
+_ZIP_SELECTION_BG_FILENAME = "hm-zip-selection-bg.jpg"
+_ZIP_SELECTION_BG_SOURCE = os.path.join(APP_DIR, "image", "orange.jpg")
+
+
+def _sync_zip_selection_background() -> None:
+    """Copy ZIP selection fill image into www/ for the map iframe.
+
+    After copy, reset atime/mtime to "now" so Starlette's FileResponse can build
+    Last-Modified (Windows raises OSError 22 for some copied EXIF/NTFS timestamps).
+    """
+    dst = os.path.join(WWW_DIR, _ZIP_SELECTION_BG_FILENAME)
+    if not os.path.isfile(_ZIP_SELECTION_BG_SOURCE):
+        return
+    try:
+        shutil.copy2(_ZIP_SELECTION_BG_SOURCE, dst)
+        now = time.time()
+        os.utime(dst, (now, now))
+    except OSError:
+        pass
+
+
+def _zip_selection_image_cache_token() -> str:
+    """Stable, positive cache-buster for the image URL (avoid bad source mtimes)."""
+    if not os.path.isfile(_ZIP_SELECTION_BG_SOURCE):
+        return str(int(time.time()) % 1_000_000_000)
+    try:
+        with open(_ZIP_SELECTION_BG_SOURCE, "rb") as f:
+            chunk = f.read(262144)
+        return str(zlib.crc32(chunk) & 0xFFFFFFFF)
+    except OSError:
+        return str(int(time.time()) % 1_000_000_000)
 
 _STATE_ABBR = {
     "Alabama": "AL",
@@ -179,6 +214,8 @@ def build_map(
     if show_entities_layer and entities is not None and len(entities) > 0:
         _add_entity_layer(m, entities, bounds)
 
+    # Sync image before injecting script so www/ file exists; utime avoids Windows 500 on serve.
+    _sync_zip_selection_background()
     _inject_click_handler(m)
     _inject_opacity_listener(m, opacity)
     _inject_opacity_slider(m, opacity, current_state=current_state)
@@ -469,6 +506,7 @@ def _add_entity_layer(
 
 def _inject_click_handler(m: folium.Map) -> None:
     map_var = m.get_name()
+    _zip_bg_ver = _zip_selection_image_cache_token()
     script = f"""<script>
 window._selectedLayers = {{}};
 window._maxSelected = 10;
@@ -476,7 +514,6 @@ window._maxSelected = 10;
 window._dollarMarkers = {{}};
 window._focusTimer = null;
 window._focusTransient = null;
-window._selectedBorderColor = '#ff7f00';
 window._normZip = function(v) {{
     var s = String(v || '').trim();
     if (!s) return '';
@@ -486,55 +523,80 @@ window._normZip = function(v) {{
     var d = s.replace(/\\D/g, '');
     return d ? d.slice(0, 5).padStart(5, '0') : '';
 }};
-window._ensureStripePattern = function(map) {{
+window._hmZipSelectionBgFile = '{_ZIP_SELECTION_BG_FILENAME}';
+window._hmZipSelectionBgVer = '{_zip_bg_ver}';
+window._hmZipSelectionHref = function() {{
+    try {{
+        var rel = window._hmZipSelectionBgFile + '?v=' + window._hmZipSelectionBgVer;
+        return new URL(rel, window.location.href).href;
+    }} catch (e) {{
+        return window._hmZipSelectionBgFile + '?v=' + window._hmZipSelectionBgVer;
+    }}
+}};
+// Fixed tile size in map/SVG pixel space so every ZIP shows the same logo scale (not stretched per polygon).
+window._hmZipSelectionTilePx = 100;
+window._zipSelectionFillRef = function(path, map) {{
+    if (!path || !map || !map.getContainer) return 'url(#hmZipPat_0)';
+    var svg = path.ownerSVGElement || path.closest('svg');
+    if (!svg) return 'url(#hmZipPat_0)';
+    var all = map.getContainer().querySelectorAll('svg');
+    for (var i = 0; i < all.length; i++) {{
+        if (all[i] === svg) return 'url(#hmZipPat_' + i + ')';
+    }}
+    return 'url(#hmZipPat_0)';
+}};
+window._ensureSelectedZipPattern = function(map) {{
     if (!map || !map.getContainer) return;
+    var href = window._hmZipSelectionHref();
+    var tile = window._hmZipSelectionTilePx || 100;
     var svgs = map.getContainer().querySelectorAll('svg');
-    svgs.forEach(function(svg) {{
-        if (!svg.querySelector('#hmStripePattern')) {{
-            var defs = svg.querySelector('defs');
-            if (!defs) {{
-                defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-                svg.insertBefore(defs, svg.firstChild);
-            }}
-            var pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
-            pattern.setAttribute('id', 'hmStripePattern');
-            pattern.setAttribute('patternUnits', 'userSpaceOnUse');
-            pattern.setAttribute('width', '8');
-            pattern.setAttribute('height', '8');
-            pattern.setAttribute('patternTransform', 'rotate(45)');
-            var bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-            bg.setAttribute('x', '0'); bg.setAttribute('y', '0');
-            bg.setAttribute('width', '8'); bg.setAttribute('height', '8');
-            bg.setAttribute('fill', '#ffffff');
-            var stripe = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            stripe.setAttribute('x1', '0'); stripe.setAttribute('y1', '0');
-            stripe.setAttribute('x2', '0'); stripe.setAttribute('y2', '8');
-            stripe.setAttribute('stroke', '#ff7f00');
-            stripe.setAttribute('stroke-width', '4');
-            pattern.appendChild(bg);
-            pattern.appendChild(stripe);
-            defs.appendChild(pattern);
+    svgs.forEach(function(svg, i) {{
+        var pid = 'hmZipPat_' + i;
+        if (svg.querySelector('#' + pid)) return;
+        var defs = svg.querySelector('defs');
+        if (!defs) {{
+            defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            svg.insertBefore(defs, svg.firstChild);
         }}
+        var pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
+        pattern.setAttribute('id', pid);
+        pattern.setAttribute('patternUnits', 'userSpaceOnUse');
+        pattern.setAttribute('patternContentUnits', 'userSpaceOnUse');
+        pattern.setAttribute('width', String(tile));
+        pattern.setAttribute('height', String(tile));
+        pattern.setAttribute('x', '0');
+        pattern.setAttribute('y', '0');
+        var img = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+        img.setAttribute('x', '0');
+        img.setAttribute('y', '0');
+        img.setAttribute('width', String(tile));
+        img.setAttribute('height', String(tile));
+        img.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+        img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', href);
+        img.setAttribute('href', href);
+        pattern.appendChild(img);
+        defs.appendChild(pattern);
     }});
 }};
 window._applySelectedStyle = function(layer, map, emphasize) {{
     if (!layer || !layer.setStyle) return;
-    window._ensureStripePattern(map);
-    var selectedFillOpacity = Math.max(0.1, Math.min(1, window._mapOpacity || 1));
-    var borderW = emphasize ? 3 : 2.5;
-    layer.setStyle({{
+    window._ensureSelectedZipPattern(map);
+    // Selected ZIP fill ignores map opacity slider (always full strength).
+    var selectedFillOpacity = 1;
+    // Thinnest visible white outline (Leaflet + SVG; 0.5px where supported).
+    var selOutline = {{color: '#ffffff', weight: 0.5, opacity: 1}};
+    layer.setStyle(Object.assign({{
         fillColor: '#ffffff',
-        fillOpacity: selectedFillOpacity,
-        color: window._selectedBorderColor,
-        weight: borderW
-    }});
+        fillOpacity: selectedFillOpacity
+    }}, selOutline));
     if (layer._path) {{
-        layer._path.setAttribute('fill', 'url(#hmStripePattern)');
+        layer._path.setAttribute('fill', window._zipSelectionFillRef(layer._path, map));
         layer._path.setAttribute('fill-opacity', String(selectedFillOpacity));
         layer._path.style.fillOpacity = String(selectedFillOpacity);
-        layer._path.style.filter = emphasize
-            ? 'drop-shadow(0 0 10px rgba(255,127,0,0.75))'
-            : 'drop-shadow(0 0 8px rgba(255,127,0,0.65))';
+        layer._path.setAttribute('stroke', '#ffffff');
+        layer._path.setAttribute('stroke-width', '0.5');
+        layer._path.setAttribute('vector-effect', 'non-scaling-stroke');
+        layer._path.style.filter = '';
     }}
 }};
 window._clearSelectedStyle = function(layer) {{
@@ -1012,11 +1074,9 @@ def _inject_opacity_slider(m: folium.Map, initial_opacity: float, current_state:
                 var paths = container.querySelectorAll('path.leaflet-interactive');
                 paths.forEach(function(p) {{
                     var fillVal = p.getAttribute('fill') || '';
-                    var target = (fillVal.indexOf('hmStripePattern') >= 0)
-                        ? Math.max(0.1, val)
-                        : val;
-                    p.setAttribute('fill-opacity', String(target));
-                    p.style.fillOpacity = String(target);
+                    if (fillVal.indexOf('hmZipPat_') >= 0) return;
+                    p.setAttribute('fill-opacity', String(val));
+                    p.style.fillOpacity = String(val);
                     p.style.opacity = '1';
                 }});
             }}
