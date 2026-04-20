@@ -1,3 +1,4 @@
-command:
-  - python
-  - run_databricks_app.py
+# Entry must be `python <file>.py`. If the command is `python dash` or `dash` alone,
+# Python looks for a script named "dash" under the app root and crashes with:
+#   can't open file '.../source_code/dash'
+command: ["python", "run_databricks_app.py"]
