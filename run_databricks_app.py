@@ -21,16 +21,21 @@ VOLUME_TIER1 = "/Volumes/datascience/default/hospitalmarketanalysis/final_tier1_
 # Example: VOLUME_TIER1 = "/Volumes/main/market_intel/files/final_tier1_all_percentiles.parquet"
 
 # Optional. When the pipeline runs, Census zips and zcta_shp/state_shp extract here.
+# Pre-upload zcta_500k.zip + state_500k.zip to this folder if the app cannot reach the internet.
 # Leave "" to use backend/data/ (not recommended if that tree is not in the app bundle).
 VOLUME_DATA_CACHE = ""
 # Example:
 # VOLUME_DATA_CACHE = "/Volumes/main/market_intel/cache"
 
-# --- Pipeline control (pick one strategy) ---
-# True = never run backend/pipeline.py (use when gpkg is already final on the volume).
-SKIP_PIPELINE = False
+# --- Pipeline control ---
+# Databricks Apps often cannot resolve www2.census.gov (DNS / egress). If your gpkg is
+# already on a volume, keep SKIP_PIPELINE True. Set False only when you can rebuild:
+# attach this UC volume as an App resource, grant read on the gpkg path, and either
+# allowlist census egress or pre-stage Tiger zips under VOLUME_DATA_CACHE.
+SKIP_PIPELINE = True
 
-# True = run pipeline only if VOLUME_GPKG (or default gpkg path) does not exist yet.
+# If True and SKIP_PIPELINE is False: skip pipeline only when HOSPITAL_MARKET_GPKG exists
+# inside *this* container (requires the volume to be mounted on the app).
 SKIP_PIPELINE_IF_GPKG_EXISTS = True
 
 
@@ -99,6 +104,15 @@ def main() -> None:
     )
 
     if not _should_skip_pipeline(proc_env):
+        gpkg = proc_env.get("HOSPITAL_MARKET_GPKG", "").strip()
+        if gpkg and not Path(gpkg).is_file():
+            print(
+                "WARNING: HOSPITAL_MARKET_GPKG is set but this process cannot read that file "
+                f"({gpkg!r}). The pipeline will run. Attach the Unity Catalog volume to the app "
+                "or set SKIP_PIPELINE = True if the map is already built. Without egress to "
+                "www2.census.gov, put zcta_500k.zip and state_500k.zip under VOLUME_DATA_CACHE.",
+                flush=True,
+            )
         subprocess.run(
             [sys.executable, "backend/pipeline.py"],
             check=True,
