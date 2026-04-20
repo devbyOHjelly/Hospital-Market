@@ -288,7 +288,7 @@ def _handle_top_msa_average_by_option(df: pd.DataFrame, q_raw: str, q: str) -> s
         bullets=[
             f"Score column used: {score_col}.",
             "Aggregation method: simple mean across ZIP rows per MSA (not population-weighted).",
-            f"Scope: {st if st else 'all states in dashboard dataset'}.",
+            f"Scope: {st if st else 'all states in loaded dataset'}.",
             "MSA ranking: " + " | ".join(ranked_lines),
         ],
         implication="This MSA should move to active diligence under the selected option methodology.",
@@ -331,7 +331,7 @@ def _handle_surface_query(df: pd.DataFrame, q_raw: str, q: str) -> str | None:
     if st and "state" in df.columns:
         scoped = df[df["state"].astype(str).str.lower() == st.lower()].copy()
         if len(scoped) == 0:
-            return f"No rows are available for {st} in the dashboard data."
+            return f"No rows are available for {st} in the loaded data."
 
     if "msa" in q and any(k in q for k in ("best", "highest", "top")) and any(
         k in q for k in ("attractiveness", "market score", "market potential", "hospital potential")
@@ -355,7 +355,7 @@ def _handle_surface_query(df: pd.DataFrame, q_raw: str, q: str) -> str | None:
             bullets=[
                 f"Score column used: {score_col}.",
                 f"Aggregation method: {'simple mean' if _prefers_mean_average(q) else 'population-weighted average'}.",
-                f"Scope: {st if st else 'all states in dashboard dataset'}.",
+                f"Scope: {st if st else 'all states in loaded dataset'}.",
                 "All ranked MSAs (top shown): " + " | ".join(ranked_lines),
             ],
             implication="This market is the first candidate for deeper diligence, competitor mapping, and service-line fit validation.",
@@ -376,7 +376,7 @@ def _handle_surface_query(df: pd.DataFrame, q_raw: str, q: str) -> str | None:
             headline=f"ZIP {z}{(' (' + st_name + ')') if st_name else ''} has the highest market score at {float(s.loc[idx]):.2f}.",
             bullets=[
                 "Metric used: hospital_potential.",
-                f"Scope: {st if st else 'all states in dashboard dataset'}.",
+                f"Scope: {st if st else 'all states in loaded dataset'}.",
                 "Result is computed directly from the loaded dataset, not inferred.",
             ],
             implication="This ZIP should be prioritized for service-demand validation and local competitor pressure analysis.",
@@ -451,7 +451,7 @@ def _handle_surface_query(df: pd.DataFrame, q_raw: str, q: str) -> str | None:
                 bullets=[
                     f"Score column used: {score_col}.",
                     f"Aggregation method: {'simple mean' if _prefers_mean_average(q) else 'population-weighted average'} at the MSA level.",
-                    f"Scope: {st if st else 'all states in dashboard dataset'}.",
+                    f"Scope: {st if st else 'all states in loaded dataset'}.",
                 ],
                 implication="This MSA should be treated as the lead expansion candidate under the selected scoring option.",
             )
@@ -466,7 +466,7 @@ def _handle_surface_query(df: pd.DataFrame, q_raw: str, q: str) -> str | None:
             bullets=[
                 f"Score column used: {score_col}.",
                 "Scoring is computed from the configured option definitions and percentile components.",
-                f"Scope: {st if st else 'all states in dashboard dataset'}.",
+                f"Scope: {st if st else 'all states in loaded dataset'}.",
             ],
             implication="This ZIP is the top-ranked target under the requested evaluation method.",
         )
@@ -509,7 +509,7 @@ def _handle_surface_query(df: pd.DataFrame, q_raw: str, q: str) -> str | None:
             bullets=[
                 f"Score column used: {score_col}.",
                 "Aggregation method: population-weighted average.",
-                f"Scope: {st if st else 'all states in dashboard dataset'}.",
+                f"Scope: {st if st else 'all states in loaded dataset'}.",
             ],
             implication="This is the top market to pressure-test with demand, access, and competitor analyses.",
         )
@@ -529,7 +529,7 @@ def _handle_comparison(df: pd.DataFrame, q: str) -> str | None:
         if st and "state" in grouped.columns:
             grouped = grouped[grouped["state"].astype(str).str.lower() == st.lower()].copy()
             if len(grouped) == 0:
-                return f"No MSA rows are available for {st} in the dashboard data."
+                return f"No MSA rows are available for {st} in the loaded data."
         m_vs = re.search(r"(.+?)\s+(?:vs|versus)\s+(.+)", q, flags=re.IGNORECASE)
         m_cmp = re.search(r"compare\s+(.+?)\s+and\s+(.+)", q, flags=re.IGNORECASE)
         if m_vs:
@@ -576,7 +576,7 @@ def _handle_comparison(df: pd.DataFrame, q: str) -> str | None:
                 scoped = df[df[c].astype(str).str.lower() == st.lower()].copy()
                 break
         if len(scoped) == 0:
-            return f"No ZIP rows are available for {st} in the dashboard data."
+            return f"No ZIP rows are available for {st} in the loaded data."
 
     wants_attractiveness = ("attractiveness" in q) or any(alias in q for alias in OPTION_ALIASES.keys())
     if wants_attractiveness:
@@ -637,7 +637,7 @@ def _handle_explanation(df: pd.DataFrame, q: str) -> str | None:
                     scoped = df[df[c].astype(str).str.lower() == st.lower()].copy()
                     break
             if len(scoped) == 0:
-                return f"No rows are available for {st} in the dashboard data."
+                return f"No rows are available for {st} in the loaded data."
 
         s = pd.to_numeric(scoped.get(score_col), errors="coerce")
         if not s.notna().any():

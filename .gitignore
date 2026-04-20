@@ -11,6 +11,11 @@ build/
 
 # Data files (generated / downloaded — too large for git)
 backend/data/raw/NPPES_Data_Dissemination_February_2026/
+# Census Tiger extracts + zips (pipeline downloads these; do not commit)
+backend/data/zcta_shp/
+backend/data/state_shp/
+backend/data/zcta_500k.zip
+backend/data/state_500k.zip
 
 # OS
 .DS_Store
@@ -20,7 +25,5 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Shiny
-__shinylive__/
-
+# Environment variables
 .env

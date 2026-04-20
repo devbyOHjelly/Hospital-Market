@@ -1,3 +1,5 @@
+"""Folium map HTML served under `www/` and embedded in the Dash app (iframe; `postMessage` to parent)."""
+
 import json
 import os
 import shutil
@@ -6,6 +8,7 @@ import re
 import zlib
 import numpy as np
 import folium
+from folium.features import GeoJsonTooltip
 import pandas as pd
 import geopandas as gpd
 from frontend.config import APP_DIR, COLORMAP, WWW_DIR
@@ -16,7 +19,7 @@ _ZIP_SELECTION_BG_SOURCE = os.path.join(APP_DIR, "image", "orange.jpg")
 
 
 def _sync_zip_selection_background() -> None:
-    """Copy ZIP selection fill image into www/ for the map iframe.
+    """Copy ZIP selection fill image into www/ for the map iframe (Dash serves static assets).
 
     After copy, reset atime/mtime to "now" so Starlette's FileResponse can build
     Last-Modified (Windows raises OSError 22 for some copied EXIF/NTFS timestamps).
@@ -60,6 +63,7 @@ def build_map(
     current_state: str | None = None,
     show_market_layer: bool = True,
     show_entities_layer: bool = False,
+    iframe_src_prefix: str = "",
 ) -> str:
     bounds = filtered.total_bounds
     center = [(bounds[1] + bounds[3]) / 2, (bounds[0] + bounds[2]) / 2]
@@ -85,26 +89,35 @@ def build_map(
         folium.Element(
             """
     <style>
-    html, body, .leaflet-container, .opacity-ctrl, .leaflet-control-layers {
+    html, body, .leaflet-container, .leaflet-control-layers {
         font-family: "Open Sans", "Segoe UI", Tahoma, Arial, sans-serif !important;
     }
-    .zip-tooltip {
-        background: #000000 !important;
+    .leaflet-tooltip.hm-zip-tip {
+        background: #F37021 !important;
         color: #ffffff !important;
-        border: 2px solid #ffffff !important;
-        border-radius: 0 !important;
-        padding: 4px 10px !important;
+        border: none !important;
+        outline: none !important;
         font-family: "Open Sans", "Segoe UI", Tahoma, Arial, sans-serif !important;
-        font-size: 11px !important;
-        font-weight: 600 !important;
-        letter-spacing: 0.02em !important;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.4) !important;
-        white-space: nowrap !important;
-        text-align: left !important;
+        font-size: 12px !important;
+        line-height: 1.35 !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        padding: 8px 10px !important;
     }
-    .zip-tooltip table { text-align: left !important; width: 100% !important; }
-    .zip-tooltip td, .zip-tooltip th { text-align: left !important; padding: 1px 4px 1px 0 !important; }
-    .zip-tooltip::before { display: none !important; }
+    .leaflet-tooltip.hm-zip-tip th {
+        color: #ffffff !important;
+        font-weight: 700 !important;
+        text-align: left !important;
+        padding-right: 10px !important;
+        vertical-align: top !important;
+    }
+    .leaflet-tooltip.hm-zip-tip td {
+        color: #ffffff !important;
+        font-weight: 400 !important;
+    }
+    .leaflet-tooltip.hm-zip-tip::before {
+        display: none !important;
+    }
     </style>
     """
         )
@@ -169,24 +182,28 @@ def build_map(
 
     filtered["state_abbr"] = filtered["state"].map(lambda s: _STATE_ABBR.get(s, s))
 
-    tip_fields = ["state_abbr", "zipcode"]
-    tip_aliases = ["State:", "ZIP:"]
-    if "place_name" in filtered.columns:
-        tip_fields.append("place_name")
-        tip_aliases.append("Place:")
-    if "hospital_potential" in filtered.columns:
-        filtered["hospital_potential_tooltip"] = (
-            pd.to_numeric(filtered["hospital_potential"], errors="coerce")
-            .round(2)
-            .fillna(0.0)
-        )
-        tip_fields.append("hospital_potential_tooltip")
-        tip_aliases.append("Score:")
+    hp_num = pd.to_numeric(filtered.get("hospital_potential", 0), errors="coerce")
+    filtered["hm_tip_zip"] = filtered["zipcode"].astype(str)
+    filtered["hm_tip_place"] = filtered["place_name"].fillna("").astype(str).str.slice(0, 56)
+    if "msa_name" in filtered.columns:
+        filtered["hm_tip_msa"] = filtered["msa_name"].fillna("").astype(str).str.slice(0, 48)
+    else:
+        filtered["hm_tip_msa"] = ""
+    filtered["hm_tip_score"] = hp_num.map(lambda x: f"{float(x):.2f}" if pd.notna(x) else "—")
 
     geojson_data = json.loads(filtered.to_json())
     _op = opacity
 
     if show_market_layer:
+        _tip_fields = ["hm_tip_zip", "hm_tip_msa", "hm_tip_place", "hm_tip_score"]
+        _tip_aliases = ["ZIP", "MSA", "Place", "ZIP Score"]
+        zip_tip = GeoJsonTooltip(
+            fields=_tip_fields,
+            aliases=_tip_aliases,
+            sticky=True,
+            labels=True,
+            class_name="hm-zip-tip",
+        )
         geo = folium.GeoJson(
             geojson_data,
             style_function=lambda f: {
@@ -200,13 +217,7 @@ def build_map(
                 "color": "#e6edf3",
                 "fillOpacity": min(_op + 0.15, 1.0),
             },
-            tooltip=folium.GeoJsonTooltip(
-                fields=tip_fields,
-                aliases=tip_aliases,
-                sticky=True,
-                class_name="zip-tooltip",
-                style="",
-            ),
+            tooltip=zip_tip,
             name="Market Score",
         )
         geo.add_to(m)
@@ -218,12 +229,10 @@ def build_map(
     _sync_zip_selection_background()
     _inject_click_handler(m)
     _inject_opacity_listener(m, opacity)
-    _inject_opacity_slider(m, opacity, current_state=current_state)
     if focus_zip:
         _inject_focus_zip(m, focus_zip)
     if selected_zips:
         _inject_preselected(m, selected_zips)
-    _inject_legend(m)
 
     m.get_root().html.add_child(
         folium.Element(
@@ -257,8 +266,10 @@ def build_map(
 
     m.save(os.path.join(WWW_DIR, "map.html"))
     ts = int(time.time() * 1000)
+    base = (iframe_src_prefix or "").strip().rstrip("/")
+    map_src = f"{base}/map.html?v={ts}" if base else f"map.html?v={ts}"
     return (
-        f'<iframe id="map_frame" src="map.html?v={ts}" '
+        f'<iframe id="map_frame" src="{map_src}" '
         f'style="width:100%;height:100vh;border:none;display:block;"></iframe>'
     )
 
@@ -438,7 +449,7 @@ def _add_entity_layer(
     pin_svg = (
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 42">'
         '<path d="M15 1C7.8 1 2 6.8 2 14c0 10.5 13 26 13 26s13-15.5 13-26C28 6.8 22.2 1 15 1z"'
-        ' fill="#ff7f00" stroke="#000" stroke-width="1.5"/>'
+        ' fill="#F37021" stroke="#000" stroke-width="1.5"/>'
         '<circle cx="15" cy="14" r="5" fill="#ffffff"/>'
         "</svg>"
     )
@@ -780,6 +791,44 @@ def _inject_opacity_listener(m: folium.Map, initial_opacity: float) -> None:
     map_var = m.get_name()
     script = f"""<script>
 window._mapOpacity = {initial_opacity};
+window._hmApplyMapOpacity = function(val) {{
+    var v = parseFloat(val);
+    if (isNaN(v)) return;
+    v = Math.max(0, Math.min(1, v));
+    window._mapOpacity = v;
+    var map = window['{map_var}'];
+    if (!map) return;
+    map.eachLayer(function(layer) {{
+        if (layer.eachLayer) {{
+            layer.eachLayer(function(sub) {{
+                if (sub.feature && sub.feature.properties && sub.feature.properties.zipcode && sub.setStyle) {{
+                    if (sub._focusHighlight) {{
+                        window._applySelectedStyle(sub, map, false);
+                    }} else {{
+                        sub.setStyle({{fillOpacity: v}});
+                        if (sub._path) {{
+                            sub._path.setAttribute('fill-opacity', String(v));
+                            sub._path.style.fillOpacity = String(v);
+                            sub._path.style.opacity = '1';
+                        }}
+                    }}
+                }}
+            }});
+        }}
+    }});
+    try {{
+        var container = map.getContainer();
+        if (container) {{
+            container.querySelectorAll('path.leaflet-interactive').forEach(function(p) {{
+                var fillVal = p.getAttribute('fill') || '';
+                if (fillVal.indexOf('hmZipPat_') >= 0) return;
+                p.setAttribute('fill-opacity', String(v));
+                p.style.fillOpacity = String(v);
+                p.style.opacity = '1';
+            }});
+        }}
+    }} catch (e) {{}}
+}};
 window.addEventListener('load', function() {{
     var map = window['{map_var}'];
     if (!map) return;
@@ -788,7 +837,6 @@ window.addEventListener('load', function() {{
             layer.eachLayer(function(sub) {{
                 if (sub.feature && sub.feature.properties && sub.feature.properties.zipcode && sub.setStyle) {{
                     if (!sub._origFillColor && sub.options.fillColor) sub._origFillColor = sub.options.fillColor;
-                    sub.off('mouseover').off('mouseout');
                     sub.on('mouseover', function(e) {{
                         if (e.target._focusHighlight) {{
                             window._applySelectedStyle(e.target, map, true);
@@ -813,9 +861,15 @@ window.addEventListener('load', function() {{
             }});
         }}
     }});
+    window._hmApplyMapOpacity(window._mapOpacity);
 }});
 
 window.addEventListener('message', function(event) {{
+    if (event.data && event.data.type === 'hm_set_opacity') {{
+        var nv = parseFloat(event.data.value);
+        if (!isNaN(nv)) window._hmApplyMapOpacity(nv);
+        return;
+    }}
     if (event.data && event.data.type === 'deselect_zip') {{
         window._deselectZip(String(event.data.zipcode || ''));
     }}
@@ -885,7 +939,7 @@ def _inject_states_in_layer_control(m: folium.Map, states: list[str], current: s
     display: block; padding: 3px 0; cursor: pointer;
     font-size: 0.75rem; color: #ffffff;
 }}
-.lc-states-section label:hover {{ color: #ff7f00; }}
+.lc-states-section label:hover {{ color: #F37021; }}
 .lc-states-section input[type="radio"] {{
     accent-color: #f97316; margin-right: 6px; vertical-align: middle;
 }}
@@ -991,112 +1045,6 @@ document.addEventListener('DOMContentLoaded', function() {{
     m.get_root().html.add_child(folium.Element(html))
 
 
-def _inject_opacity_slider(m: folium.Map, initial_opacity: float, current_state: str | None = None) -> None:
-    map_var = m.get_name()
-    pct = int(initial_opacity * 100)
-    script = f"""
-<style>
-.opacity-ctrl {{
-    position: fixed; right: 10px; top: calc(50% + 24px); transform: translateY(-50%);
-    z-index: 1000; display: flex; flex-direction: column; align-items: center;
-    background: #000000; border-radius: 0; padding: 8px 0;
-    border: 2px solid #ffffff; gap: 8px;
-    height: 280px;
-    justify-content: space-between;
-    width: 62px; box-sizing: border-box;
-    font-family: "Open Sans", "Segoe UI", Tahoma, Arial, sans-serif !important;
-}}
-.opacity-ctrl .op-label {{
-    color: #ffffff; font-size: 0.72rem; letter-spacing: 0.02em; text-transform: none;
-    writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg); margin: 4px 0;
-    font-weight: 600;
-}}
-.opacity-ctrl input[type="range"] {{
-    writing-mode: vertical-lr; direction: rtl; width: 8px; height: 190px;
-    appearance: none; -webkit-appearance: none; background: transparent; cursor: pointer;
-}}
-.opacity-ctrl input[type="range"]::-webkit-slider-runnable-track {{
-    width: 8px; background: #ff7f00;
-    border-radius: 4px; border: 1px solid rgba(0,0,0,0.25);
-}}
-.opacity-ctrl input[type="range"]::-webkit-slider-thumb {{
-    -webkit-appearance: none; width: 20px; height: 8px; border-radius: 1px;
-    background: #ffffff; border: 1px solid #ffffff;
-    box-shadow: 0 0 3px rgba(0,0,0,0.35); margin-left: -6px;
-    transform: none;
-}}
-.opacity-ctrl input[type="range"]::-moz-range-track {{
-    width: 8px; background: #ff7f00;
-    border-radius: 4px; border: 1px solid rgba(0,0,0,0.25);
-}}
-.opacity-ctrl input[type="range"]::-moz-range-thumb {{
-    width: 20px; height: 8px; border-radius: 1px;
-    background: #ffffff; border: 1px solid #ffffff;
-    box-shadow: 0 0 3px rgba(0,0,0,0.35);
-}}
-.opacity-ctrl .op-val {{ color: #ffffff; font-size: 0.76rem; font-weight: 600; width: 38px; text-align: center; }}
-</style>
-<div class="opacity-ctrl">
-    <span class="op-val" id="op-pct">{pct}%</span>
-    <input type="range" id="opacity-slider" min="10" max="100" step="5" value="{pct}">
-    <span class="op-label">Opacity</span>
-</div>
-<script>
-(function() {{
-    var slider = document.getElementById('opacity-slider');
-    var label = document.getElementById('op-pct');
-    function applyOpacity(val) {{
-        window._mapOpacity = val;
-        var map = window['{map_var}'];
-        if (!map) return;
-        map.eachLayer(function(layer) {{
-            if (layer.eachLayer) {{
-                layer.eachLayer(function(sub) {{
-                    if (sub.feature && sub.feature.properties && sub.feature.properties.zipcode && sub.setStyle) {{
-                        if (sub._focusHighlight) {{
-                            window._applySelectedStyle(sub, map, false);
-                        }} else {{
-                            sub.setStyle({{fillOpacity: val}});
-                            if (sub._path) {{
-                                sub._path.setAttribute('fill-opacity', String(val));
-                                sub._path.style.fillOpacity = String(val);
-                                sub._path.style.opacity = '1';
-                            }}
-                        }}
-                    }}
-                }});
-            }}
-        }});
-        // Hard fallback: force visible opacity update on all rendered SVG polygons.
-        try {{
-            var container = map.getContainer();
-            if (container) {{
-                var paths = container.querySelectorAll('path.leaflet-interactive');
-                paths.forEach(function(p) {{
-                    var fillVal = p.getAttribute('fill') || '';
-                    if (fillVal.indexOf('hmZipPat_') >= 0) return;
-                    p.setAttribute('fill-opacity', String(val));
-                    p.style.fillOpacity = String(val);
-                    p.style.opacity = '1';
-                }});
-            }}
-        }} catch (e) {{}}
-    }}
-    function pushOpacity(val) {{
-        window.parent.postMessage({{type: 'opacity_save', value: val}}, '*');
-    }}
-    applyOpacity(parseInt(slider.value) / 100);
-    slider.addEventListener('input', function() {{
-        var val = parseInt(this.value) / 100;
-        label.textContent = this.value + '%';
-        applyOpacity(val);
-        pushOpacity(val);
-    }});
-}})();
-</script>"""
-    m.get_root().html.add_child(folium.Element(script))
-
-
 def _inject_focus_zip(m: folium.Map, zipcode: str) -> None:
     map_var = m.get_name()
     script = f"""<script>
@@ -1161,23 +1109,3 @@ window.addEventListener('load', function() {{
     m.get_root().html.add_child(folium.Element(script))
 
 
-def _inject_legend(m: folium.Map) -> None:
-    legend = (
-        '<div style="position:fixed;bottom:18px;left:50%;transform:translateX(-50%);'
-        'z-index:1000;background:#000000;border-radius:0;'
-        'padding:12px 18px 14px;border:2px solid #ffffff;'
-        'font-family:\'Open Sans\',\'Segoe UI\',Tahoma,Arial,sans-serif;">'
-        '<div style="text-align:center;color:#ffffff;font-size:0.92rem;font-weight:600;'
-        'letter-spacing:0.02em;text-transform:none;margin-bottom:4px;">'
-        "ZIP Score</div>"
-        '<div style="display:flex;align-items:center;gap:10px;">'
-        '<span style="color:#ffffff;font-size:0.76rem;font-weight:600;letter-spacing:0.02em;'
-        'text-transform:uppercase;">Low</span>'
-        '<div style="width:280px;height:16px;border-radius:0;'
-        "background:linear-gradient(to right,#ffffff,#fff0d4,#ffd699,#ffb84d,#ff7f00,#ff7f00);"
-        'border:none;"></div>'
-        '<span style="color:#ffffff;font-size:0.76rem;font-weight:600;letter-spacing:0.02em;'
-        'text-transform:uppercase;">High</span>'
-        "</div></div>"
-    )
-    m.get_root().html.add_child(folium.Element(legend))

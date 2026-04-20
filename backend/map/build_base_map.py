@@ -1,8 +1,11 @@
+"""Build ZCTA + state polygons merged with Tier 1 parquet; output feeds the Dash app data loader."""
+
 from __future__ import annotations
 from pathlib import Path
 from backend.map.scoring_from_config import compute_hospital_potential, merge_tier1_onto_gdf
 import argparse
 import os
+import shutil
 import zipfile
 from pathlib import Path
 import geopandas as gpd
@@ -11,8 +14,15 @@ import requests
 import yaml
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
-DATA_DIR = BACKEND_DIR / "data"
 CONFIG_PATH = BACKEND_DIR / "configs" / "config.yml"
+
+
+def _data_dir() -> Path:
+    """Cache dir for Tiger zips + extracted shapefiles. Override on Databricks to DBFS or /tmp."""
+    override = os.environ.get("HOSPITAL_MARKET_DATA_DIR", "").strip()
+    if override:
+        return Path(override)
+    return BACKEND_DIR / "data"
 
 ZCTA_URLS = [
     "https://www2.census.gov/geo/tiger/GENZ2020/shp/cb_2020_us_zcta520_500k.zip",
@@ -69,7 +79,13 @@ def _download(urls: list[str], dest_path: Path, label: str) -> None:
         print(f"    HTTP {resp.status_code}, trying next ...")
     raise RuntimeError(f"Could not download {label}.")
 
+def _dir_has_shp(directory: Path) -> bool:
+    return directory.is_dir() and any(f.suffix.lower() == ".shp" for f in directory.iterdir())
+
+
 def _extract(zip_path: Path, dest_dir: Path) -> None:
+    if dest_dir.exists() and not _dir_has_shp(dest_dir):
+        shutil.rmtree(dest_dir)
     if not dest_dir.exists():
         dest_dir.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(zip_path, "r") as z:
@@ -100,10 +116,12 @@ def build(
         print(f"  States: {', '.join(sorted(target_states))}")
     print("=" * 60)
 
-    zcta_zip = DATA_DIR / "zcta_500k.zip"
-    state_zip = DATA_DIR / "state_500k.zip"
-    zcta_shp = DATA_DIR / "zcta_shp"
-    state_shp = DATA_DIR / "state_shp"
+    data_dir = _data_dir()
+    data_dir.mkdir(parents=True, exist_ok=True)
+    zcta_zip = data_dir / "zcta_500k.zip"
+    state_zip = data_dir / "state_500k.zip"
+    zcta_shp = data_dir / "zcta_shp"
+    state_shp = data_dir / "state_shp"
 
     _download(ZCTA_URLS, zcta_zip, "ZCTA boundaries (~30 MB)")
     _download(STATE_URLS, state_zip, "State boundaries (~3 MB)")

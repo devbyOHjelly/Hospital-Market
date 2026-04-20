@@ -160,7 +160,7 @@ def _generate_pandas_code(
     timeout_seconds: int,
 ) -> str:
     """
-    Notebook Step 1: give the LLM schema + question, get back executable Pandas code.
+    Step 1 of the code path: give the LLM schema + question, get back executable Pandas code.
     """
     prompt = (
         f"{_schema_context(df)}\n\n"
@@ -186,7 +186,7 @@ def _generate_pandas_code(
 
 def _execute_pandas_code(df: pd.DataFrame, generated_code: str) -> Any:
     """
-    Notebook Step 2: run the generated code against the real DataFrame.
+    Step 2: run the generated code against the real DataFrame.
     Returns whatever the code stored in `result`, or an error string.
     """
     code = re.sub(r"```(?:python)?", "", generated_code).replace("```", "").strip()
@@ -213,7 +213,7 @@ def _narrative_answer(
     timeout_seconds: int,
 ) -> str:
     """
-    Notebook Step 3: send the computed result back to the LLM for a structured
+    Step 3: send the computed result back to the LLM for a structured
     executive-style narrative answer.
     """
     user_content = (
@@ -245,7 +245,7 @@ def _execute_llm_generated_code(
     timeout_seconds: int,
 ) -> str:
     """
-    Full 3-step notebook pattern for surface queries:
+    Full three-step surface-query path:
       schema -> LLM writes Pandas code -> execute code -> LLM writes answer.
     Also used as a fallback from explanation / comparison / what-if handlers.
     """
@@ -327,9 +327,8 @@ def _explain_attractiveness_score(
     timeout_seconds: int,
 ) -> str:
     """
-    Mirrors explain_attractiveness_score() from the notebook.
-    Pulls real factor values, computes percentile comparisons vs dataset,
-    then asks the LLM to narrate WHY the score is what it is.
+    Explanation intent: pull real factor values, percentile comparisons vs dataset,
+    then ask the LLM to narrate why the score is what it is.
     """
     score_col = intent.get("score_column")
     geo_level = intent.get("geographic_level", "msa")
@@ -428,7 +427,7 @@ def _handle_comparison(
     model: str,
     timeout_seconds: int,
 ) -> str:
-    """Mirrors handle_comparison() from the notebook."""
+    """Comparison intent: resolve entities, score delta, and synthesize a narrative."""
     score_col = intent.get("score_column") or DEFAULT_SCORE_COLUMN
     geo_level = intent.get("geographic_level", "msa")
     geo_col   = {"msa": "msa_name", "county": "county_name", "zip": "zipcode"}.get(
@@ -520,7 +519,7 @@ def _detect_whatif_scenario(
     model: str,
     timeout_seconds: int,
 ) -> dict[str, Any]:
-    """Mirrors detect_whatif_scenario() from the notebook."""
+    """Parse a hypothetical scenario from the user question (JSON via LLM)."""
     available_cols = df.dtypes.to_string()
     available_msas = (
         df["msa_name"].dropna().unique().tolist() if "msa_name" in df.columns else []
@@ -559,7 +558,7 @@ def _detect_whatif_scenario(
         return {"is_whatif": False, "changes": []}
 
 def _apply_whatif_scenario(df: pd.DataFrame, scenario: dict[str, Any]) -> pd.DataFrame:
-    """Mirrors apply_whatif_scenario() from the notebook."""
+    """Apply parsed scenario edits to a DataFrame copy."""
     df_out  = df.copy()
     geo_col = {"msa": "msa_name", "county": "county_name", "zip": "zipcode"}.get(
         scenario.get("geographic_level", "msa"), "msa_name"
@@ -589,7 +588,7 @@ def _rescore_after_scenario(
     df_scenario: pd.DataFrame,
     score_col: str,
 ) -> pd.DataFrame:
-    """Mirrors rescore_after_scenario() from the notebook."""
+    """Recompute percentiles and weighted score after hypothetical edits."""
     if score_col not in SCORE_DEFINITIONS:
         return df_scenario
 
@@ -627,7 +626,7 @@ def _handle_whatif(
     model: str,
     timeout_seconds: int,
 ) -> str:
-    """Mirrors handle_whatif() from the notebook."""
+    """Summarize before/after scores and ranks for a what-if scenario."""
     score_col = scenario.get("score_column", DEFAULT_SCORE_COLUMN)
     geo_level = scenario.get("geographic_level", "msa")
     geo_col   = {"msa": "msa_name", "county": "county_name", "zip": "zipcode"}.get(
@@ -722,7 +721,7 @@ def query_agent(
     """
     Main entry point for the agent.
 
-    When `df` is supplied the agent uses the full notebook agentic pattern:
+    When `df` is supplied the agent runs the full server-side pipeline (e.g. from the Dash app):
       what-if check -> intent classify -> explanation / comparison / code-execute path.
 
     When `df` is None it falls back to context-only LLM answering (original behaviour,

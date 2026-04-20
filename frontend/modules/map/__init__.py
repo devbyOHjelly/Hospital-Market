@@ -1,4 +1,4 @@
-"""Map module exports."""
+"""Folium map builder exports for the Dash app."""
 
 from .builder import build_map
 

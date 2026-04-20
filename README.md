@@ -1,5 +1,20 @@
-# Hospital-Market
-## Quick Start
+## Repository structure
+
+```text
+Hospital-Market/                          # project root
+├── .venv/                                # local Python env
+├── .env                                  # secret variables
+├── .gitignore                            # what Git skips: venvs, .env, caches, huge raw downloads
+├── app.yaml                              # Databricks / platform app config when you deploy there
+├── README.md                             # this file
+├── requirements.txt                      # pip install -r … from repo root after initializing local Python env
+├── run_databricks_app.py                 # hosted path: pipeline then Dash on port 8000
+├── backend/                              # backend folder: data pipeline
+└── frontend/                             # frontend folder: UI and Dash server
+    
+```
+
+## Local Quick Start
 
 ```bash
 # 1. Install dependencies
@@ -13,7 +28,7 @@ echo "OPENROUTER_API_KEY=your_key_here" > .env
 cd backend
 python pipeline.py
 
-# 4. Launch the dashboard
+# 4. Launch the Dash app (from repository root)
 cd ..
-shiny run frontend/app.py
+python frontend/dash_app.py
 ```

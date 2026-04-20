@@ -1,8 +1,31 @@
 import html
 import pandas as pd
-from frontend.config import COLORMAP
+from frontend.config import score_fill_color
+from frontend.modules.definitions_html import render_reference_framework_chart_svg
 
 MAX_SELECTED = 10
+
+
+def _score_bucket_index(score: float | None) -> int:
+    """0–19 bucket for market score legend (5-point bands on 0–100)."""
+    try:
+        x = float(score if score is not None else 0)
+    except (TypeError, ValueError):
+        x = 0.0
+    x = max(0.0, min(100.0, x))
+    return min(19, max(0, int(x // 5)))
+
+
+def _score_span_html(score: float | None, display: str, extra_classes: str = "") -> str:
+    """Bucket class + CSS var so colors survive dcc.Markdown; matches map legend ramp."""
+    bi = _score_bucket_index(score)
+    hc = score_fill_color(score)
+    extra = f" {extra_classes.strip()}" if extra_classes.strip() else ""
+    return (
+        f'<span class="market-score-value market-ms-bkt-{bi}{extra}" '
+        f'style="--ms-color:{hc};">{display}</span>'
+    )
+
 
 def entity_count_html(count: int | None) -> str:
     if count is None or count == 0:
@@ -18,7 +41,7 @@ def map_chips_html(selected: list[dict], limit_msg: str = "") -> str:
         return ""
 
     count = len(selected)
-    counter_color = "#ff7f00" if count >= MAX_SELECTED else "#ffffff"
+    counter_color = "#F37021" if count >= MAX_SELECTED else "#ffffff"
 
     chips = ""
     for zd in selected:
@@ -27,10 +50,11 @@ def map_chips_html(selected: list[dict], limit_msg: str = "") -> str:
 
     return (
         f'<div class="map-chips-bar">'
+        f'<div class="map-chips-row">'
         f'<span class="map-chips-count" style="color:{counter_color};">'
-        f"{count}/{MAX_SELECTED}</span>"
+        f"{count} / {MAX_SELECTED}</span>"
         f'<div class="map-chips-items">{chips}</div>'
-        f"</div>"
+        f"</div></div>"
     )
 
 
@@ -78,7 +102,7 @@ def _market_framework_html(
     selected: list[dict],
     selected_option: str = "attractiveness_score_opt2",
 ) -> str:
-    """Framework chart for market-average view (single dynamic bubble)."""
+    """Reference-style framework chart only (selection-weighted bubble); no Framework title/copy."""
     if not selected:
         return ""
     option_col = str(selected_option or "").strip() or "attractiveness_score_opt2"
@@ -101,76 +125,27 @@ def _market_framework_html(
     if econ is None:
         econ = _weighted_avg_from_selected(selected, f"rightness_score_{opt_suffix}")
 
-    # Final fallback to market score if any construct is missing.
+    # Population-weighted ripeness only (no hospital_potential) for bubble RYG: 0–33 red, 34–66 yellow, 67–100 green.
+    ripe_pop = _weighted_avg_from_selected(selected, "ripeness")
+    if ripe_pop is None:
+        ripe_pop = _weighted_avg_from_selected(selected, f"strength_score_{opt_suffix}")
+    ripe_bubble = float(ripe_pop if ripe_pop is not None else 0.0)
+
+    # Final fallback to market score for axis positioning / display (not for bubble color).
     market_fallback = _weighted_avg_from_selected(selected, "hospital_potential")
     attr = float(attr if attr is not None else (market_fallback or 0.0))
     ability = float(ability if ability is not None else (market_fallback or 0.0))
-    ripe = float(ripe if ripe is not None else (market_fallback or 0.0))
     econ = float(econ if econ is not None else (market_fallback or 0.0))
 
-    w, h = 360, 268
-    ml, mr, mt, mb = 44, 14, 16, 54
-    pw, ph = w - ml - mr, h - mt - mb
-    cell_w, cell_h = pw / 3.0, ph / 3.0
-
-    bg_rects = (
-        f'<rect x="{ml:.1f}" y="{mt:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" fill="#ffd699"/>'
-        f'<rect x="{ml+cell_w:.1f}" y="{mt:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" fill="#ffb84d"/>'
-        f'<rect x="{ml+2*cell_w:.1f}" y="{mt:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" fill="#ff7f00"/>'
-        f'<rect x="{ml:.1f}" y="{mt+cell_h:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" fill="#fff0d4"/>'
-        f'<rect x="{ml+cell_w:.1f}" y="{mt+cell_h:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" fill="#ffd699"/>'
-        f'<rect x="{ml+2*cell_w:.1f}" y="{mt+cell_h:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" fill="#ffb84d"/>'
-        f'<rect x="{ml:.1f}" y="{mt+2*cell_h:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" fill="#ffffff"/>'
-        f'<rect x="{ml+cell_w:.1f}" y="{mt+2*cell_h:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" fill="#fff0d4"/>'
-        f'<rect x="{ml+2*cell_w:.1f}" y="{mt+2*cell_h:.1f}" width="{cell_w:.1f}" height="{cell_h:.1f}" fill="#ffd699"/>'
+    n = len(selected)
+    tip = (
+        f"Selection ({n} ZIP{'s' if n != 1 else ''}) | Attractiveness {attr:.1f} | Ability to Win {ability:.1f} | "
+        f"Ripeness (pop.-wt. avg) {ripe_bubble:.1f} | Economic Significance {econ:.1f}"
     )
-
-    def _x(v):
-        return ml + (max(0.0, min(100.0, float(v))) / 100.0) * pw
-
-    def _y(v):
-        return mt + (1.0 - (max(0.0, min(100.0, float(v))) / 100.0)) * ph
-
-    r = 5.5 + (max(0.0, min(100.0, econ)) / 100.0) * 12.5
-    cx, cy = _x(ability), _y(attr)
-
-    # Bubble color from ripeness construct.
-    if ripe >= 67:
-        bubble_fill = "#22c55e"
-    elif ripe >= 34:
-        bubble_fill = "#f59e0b"
-    else:
-        bubble_fill = "#ef4444"
-    bubble_stroke = "#000000"
-
-    svg = (
-        f'<svg viewBox="0 0 {w} {h}" width="100%" height="250" role="img" '
-        f'aria-label="Framework chart">'
-        f'<rect x="0" y="0" width="{w}" height="{h}" fill="#000000"/>'
-        + bg_rects
-        + f'<rect x="{ml}" y="{mt}" width="{pw:.1f}" height="{ph:.1f}" fill="none" stroke="#9ca3af" stroke-width="1"/>'
-        f'<line x1="{ml+pw/3:.1f}" y1="{mt}" x2="{ml+pw/3:.1f}" y2="{mt+ph}" stroke="#6b7280" stroke-width="1"/>'
-        f'<line x1="{ml+2*pw/3:.1f}" y1="{mt}" x2="{ml+2*pw/3:.1f}" y2="{mt+ph}" stroke="#6b7280" stroke-width="1"/>'
-        f'<line x1="{ml}" y1="{mt+ph/3:.1f}" x2="{ml+pw}" y2="{mt+ph/3:.1f}" stroke="#6b7280" stroke-width="1"/>'
-        f'<line x1="{ml}" y1="{mt+2*ph/3:.1f}" x2="{ml+pw}" y2="{mt+2*ph/3:.1f}" stroke="#6b7280" stroke-width="1"/>'
-        f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r:.1f}" fill="{bubble_fill}" stroke="{bubble_stroke}" stroke-width="1.2"></circle>'
-        f'<text x="{ml+pw/2:.1f}" y="{h-8}" fill="#ffffff" font-size="10" font-weight="600" letter-spacing="0.03em" text-anchor="middle">ABILITY TO SUCCEED</text>'
-        f'<text x="0" y="{mt+ph/2:.1f}" fill="#ffffff" font-size="10" font-weight="600" letter-spacing="0.03em" text-anchor="middle" transform="rotate(-90 0 {mt+ph/2:.1f})">MARKET ATTRACTIVENESS</text>'
-        f'<text x="{ml}" y="{mt+ph+16}" fill="#ffffff" font-size="10" font-weight="600" letter-spacing="0.03em">LOW</text>'
-        f'<text x="{ml+pw/2:.1f}" y="{mt+ph+16}" fill="#ffffff" font-size="10" font-weight="600" letter-spacing="0.03em" text-anchor="middle">MED</text>'
-        f'<text x="{ml+pw}" y="{mt+ph+16}" fill="#ffffff" font-size="10" font-weight="600" letter-spacing="0.03em" text-anchor="end">HIGH</text>'
-        f'<text x="{ml-8}" y="{mt+ph}" fill="#ffffff" font-size="10" font-weight="600" letter-spacing="0.03em" text-anchor="end">LOW</text>'
-        f'<text x="{ml-8}" y="{mt+ph/2:.1f}" fill="#ffffff" font-size="10" font-weight="600" letter-spacing="0.03em" text-anchor="end">MED</text>'
-        f'<text x="{ml-8}" y="{mt+8}" fill="#ffffff" font-size="10" font-weight="600" letter-spacing="0.03em" text-anchor="end">HIGH</text>'
-        "</svg>"
+    svg = render_reference_framework_chart_svg(
+        attr, ability, ripe_bubble, econ, tooltip=tip
     )
-
-    return (
-        '<div style="border:none;border-radius:6px;background:#000;margin-bottom:10px;padding:8px 8px 6px;">'
-        '<div class="def-title market-projection-title" style="margin:-2px 0 8px -4px;text-align:left;">Market Projection</div>'
-        f'<div style="margin-top:40px;">{svg}</div>'
-        "</div>"
-    )
+    return f'<div class="def-framework-chart-wrap market-framework-selection-wrap">{svg}</div>'
 
 
 # Column order for ZIP factor rows (merged from parquet + gpkg); extras append sorted.
@@ -240,44 +215,39 @@ def market_tab_html(
     entities_df=None,
     selected_option: str = "attractiveness_score_opt2",
 ) -> str:
-    """Render the Market tab with aggregate metrics + per-ZIP entity detail."""
+    """Render the Selection tab with framework chart, scores, and tier indicators per ZIP."""
+    _ = entities_df  # API compatibility with dash_app; entities list not shown in Selection tab.
     count = len(selected)
 
     if count == 0:
         return (
-            '<p class="market-empty-msg" style="color:#1a1a1a;font-size:0.82rem;padding:10px 0;text-align:center;">'
+            '<p class="market-empty-msg" style="color:#ffffff;font-size:0.82rem;padding:10px 0;text-align:center;">'
             "Click a ZIP CODE on the map to add it here</p>"
         )
 
     avg_score = _weighted_avg_from_selected(selected, "hospital_potential")
     if avg_score is None:
         avg_score = 0.0
-    avg_color = COLORMAP(avg_score)
-
-    total_ent = sum(int(z.get("entity_count", 0)) for z in selected)
-    avg_ent = total_ent / count
-
-    score_box = (
-        f'<div class="market-detail-block">'
-        f"{_market_framework_html(selected, selected_option=selected_option)}"
-        f'<div style="text-align:center;padding:6px 10px;">'
-        f'<div style="font-size:0.6rem;color:#1a1a1a;">Average Market Score</div>'
-        f'<div class="market-score-value" style="--ms-color:{avg_color};font-size:1.4rem;font-weight:800;line-height:1.2;">'
-        f"{avg_score:.1f}</div>"
-        f'<div style="font-size:0.6rem;color:#1a1a1a;">out of 100</div></div>'
-        f'<div class="market-detail-content" style="border-top:none;">'
-        f'<table style="width:100%;font-size:0.7rem;border-collapse:collapse;table-layout:fixed;">'
+    avg_score_span = _score_span_html(
+        avg_score, f"{avg_score:.1f}", "market-selection-avg-value"
     )
 
-    score_box += _row("Total Entities", f"{total_ent:,}")
-    score_box += _row("Average Entities/ZIP", f"{avg_ent:.1f}")
+    score_box = (
+        '<div class="market-detail-block">'
+        '<div class="market-selection-chart-column">'
+        '<div class="market-framework-chart-holder">'
+        f"{_market_framework_html(selected, selected_option=selected_option)}"
+        "</div>"
+        '<div class="market-selection-avg-score">'
+        '<div class="market-selection-avg-label">Average Market Score</div>'
+        f'<div class="market-selection-avg-value-wrap">{avg_score_span}</div>'
+        '<div class="market-selection-avg-sublabel">out of 100</div>'
+        "</div>"
+        "</div>"
+        "</div>"
+    )
 
-    score_box += "</table>"
-    score_box += '<div style="margin-top:8px;"></div>'
-
-    from collections import Counter
-
-    na = '<span style="color:#1a1a1a;">N/A</span>'
+    na = '<span style="color:#c8c8c8;">N/A</span>'
 
     def _is_missing(v):
         if v is None:
@@ -363,20 +333,6 @@ def market_tab_html(
         [k for k in key_union if k not in set(preferred)]
     )
 
-    def _agg_for_key(k):
-        vals = [row.get(k) for row in selected if not _is_missing(row.get(k))]
-        if not vals:
-            return None
-        nums = [_to_num(v) for v in vals]
-        num_vals = [v for v in nums if v is not None]
-        if num_vals and (len(num_vals) / len(vals)) >= 0.6:
-            return sum(num_vals) / len(num_vals)
-        return Counter(str(v).strip() for v in vals).most_common(1)[0][0]
-
-    all_rows_agg = [(_pretty_col(k), _fmt_dynamic(k, _agg_for_key(k))) for k in ordered_keys]
-    if not all_rows_agg:
-        all_rows_agg = [("No parquet factors found", na)]
-
     def _factor_dropdown(title, rows, open_default=False):
         tid = title.lower().replace(" ", "_")
         open_attr = " open" if open_default else ""
@@ -391,19 +347,19 @@ def market_tab_html(
         frag += "</table></div></details>"
         return frag
 
-    score_box += "</div></div>"
+    def _tier_score_cell(val: float | None) -> str:
+        if val is None:
+            return na
+        return _score_span_html(val, f"{val:.1f}")
 
     items = ""
     for zd in selected:
         zc = zd.get("zipcode", "")
         st = zd.get("state", "")
         sc = float(zd.get("hospital_potential", 0) or 0)
-        sc_color = COLORMAP(sc)
-        ent_count = int(zd.get("entity_count", 0) or 0)
-        hosp_count = int(zd.get("hospital_count", 0) or 0)
         row_pairs = [(_pretty_col(k), _fmt_dynamic(k, zd.get(k))) for k in ordered_keys]
         factors_dd = _factor_dropdown(
-            "ZIP-level factors",
+            "Tier Information",
             row_pairs if row_pairs else [("No parquet factors found", na)],
         )
 
@@ -426,148 +382,51 @@ def market_tab_html(
         z_ripe = _score_for(zd, "ripeness", f"strength_score_{opt_suffix}")
         z_econ = _score_for(zd, "economic_significance", f"rightness_score_{opt_suffix}")
 
-        hosp_content = ""
-        if entities_df is not None and len(entities_df) > 0:
-            zip_ents = entities_df[
-                (entities_df["zip"].astype(str).str.zfill(5) == zc)
-                & (entities_df.get("entity_type", pd.Series()) == "hospital")
-            ]
-            if len(zip_ents) > 0:
-                for _, h in zip_ents.head(10).iterrows():
-                    name = (
-                        str(h.get("display_name", ""))
-                        if pd.notna(h.get("display_name"))
-                        else ""
-                    )
-                    htype = (
-                        str(h.get("hospital_type", ""))
-                        if pd.notna(h.get("hospital_type"))
-                        else ""
-                    )
-                    own = str(h.get("ownership", "")) if pd.notna(h.get("ownership")) else ""
-                    rating = h.get("hospital_rating")
-                    emerg = (
-                        str(h.get("emergency_services", ""))
-                        if pd.notna(h.get("emergency_services"))
-                        else ""
-                    )
-
-                    hosp_content += (
-                        f'<div style="padding:4px 0;border-top:1px solid #f0ebe4;">'
-                        f'<div style="font-size:0.7rem;font-weight:600;color:#1a1a1a;">{name}</div>'
-                    )
-                    details = []
-                    if htype:
-                        details.append(htype)
-                    if own:
-                        short_own = own if len(own) < 30 else own[:27] + "..."
-                        details.append(short_own)
-                    if details:
-                        hosp_content += (
-                            f'<div style="font-size:0.62rem;color:#1a1a1a;">{" · ".join(details)}</div>'
-                        )
-
-                    badges = []
-                    if pd.notna(rating) and str(rating).strip():
-                        try:
-                            rv = float(rating)
-                            badges.append(
-                                f'<span style="font-size:0.6rem;color:#f59e0b;">{"&#9733;" * round(rv)} {rv:.0f}/5</span>'
-                            )
-                        except ValueError:
-                            badges.append(
-                                '<span style="font-size:0.6rem;color:#1a1a1a;">Rating: N/A</span>'
-                            )
-                    else:
-                        badges.append(
-                            '<span style="font-size:0.6rem;color:#1a1a1a;">Rating: N/A</span>'
-                        )
-                    if emerg.lower() == "yes":
-                        badges.append(
-                            '<span style="font-size:0.6rem;color:#22c55e;">&#9679; ER</span>'
-                        )
-                    else:
-                        badges.append(
-                            '<span style="font-size:0.6rem;color:#1a1a1a;">ER: N/A</span>'
-                        )
-                    hosp_content += (
-                        f'<div style="display:flex;gap:8px;margin-top:1px;">{"".join(badges)}</div>'
-                    )
-                    hosp_content += "</div>"
-
-                if len(zip_ents) > 10:
-                    hosp_content += (
-                        f'<div style="font-size:0.6rem;color:#1a1a1a;padding:2px 0;">+{len(zip_ents) - 10} more</div>'
-                    )
-            else:
-                hosp_content = (
-                    '<div style="font-size:0.7rem;color:#1a1a1a;padding:4px 0;">No hospitals in this ZIP</div>'
-                )
-        else:
-            hosp_content = (
-                '<div style="font-size:0.7rem;color:#1a1a1a;padding:4px 0;">No hospital data available</div>'
-            )
-
-        hosp_dropdown = (
-            f'<details class="tier-dropdown" data-tier="hospitals_{zc}">'
-            f'<summary class="tier-dropdown-summary">Hospitals</summary>'
-            f'<div class="tier-dropdown-content">{hosp_content}</div></details>'
-        )
-        score_html = (
-            f'<span class="market-score-value" style="--ms-color:{sc_color};">{sc:.1f}</span>'
-        )
+        score_html = _score_span_html(sc, f"{sc:.1f}")
+        zip_score_span = _score_span_html(sc, f"{sc:.1f}", "market-zip-score-value")
 
         items += (
             f'<li class="market-zip-item">'
             f'<details class="zip-detail-toggle" data-zip="{zc}">'
             f'<summary class="zip-detail-summary">'
             f'<span style="font-size:0.8rem;color:#ff7f00;">{zc}</span>'
-            f'<span style="font-size:0.72rem;color:#1a1a1a;margin-left:6px;">{st}</span>'
-            f'<span class="market-score-value market-zip-score-value" style="--ms-color:{sc_color};margin-left:auto;font-size:0.78rem;font-weight:800;">{sc:.1f}</span>'
+            f'<span style="font-size:0.72rem;color:#e8e8e8;margin-left:6px;">{st}</span>'
+            f'{zip_score_span}'
             f'<span class="market-zip-remove chip-remove" data-zip="{zc}" title="Remove ZIP">&times;</span>'
             f"</summary>"
             f'<div class="zip-detail-content">'
             f'<table style="width:100%;font-size:0.7rem;border-collapse:collapse;table-layout:fixed;">'
-            f'{_row("Score", score_html, "#ffffff")}'
-            f'{_row("Attractiveness", (f"{z_attr:.1f}" if z_attr is not None else na))}'
-            f'{_row("Ability to Succeed", (f"{z_ability:.1f}" if z_ability is not None else na))}'
-            f'{_row("Ripeness", (f"{z_ripe:.1f}" if z_ripe is not None else na))}'
-            f'{_row("Economic Significance", (f"{z_econ:.1f}" if z_econ is not None else na))}'
-            f'{_row("Entities", f"{ent_count:,}")}'
-            f'{_row("Hospitals", f"{hosp_count:,}", "#22c55e")}'
+            f'{_row("Score", score_html, value_color=None)}'
+            f'{_row("Attractiveness", _tier_score_cell(z_attr), value_color=None)}'
+            f'{_row("Ability to Succeed", _tier_score_cell(z_ability), value_color=None)}'
+            f'{_row("Ripeness", _tier_score_cell(z_ripe), value_color=None)}'
+            f'{_row("Economic Significance", _tier_score_cell(z_econ), value_color=None)}'
             f"</table>"
             f'<div style="margin-top:6px;"></div>'
-            f"{hosp_dropdown}{factors_dd}"
+            f"{factors_dd}"
             f"</div></details></li>"
         )
 
-    persist_js = """
-<script>
-(function() {
-    if (!window._marketOpenState) window._marketOpenState = {};
-    var state = window._marketOpenState;
-    document.querySelectorAll('.tier-dropdown[data-tier]').forEach(function(d) {
-        var parent = d.closest('.zip-detail-content');
-        var prefix = parent ? 'zip_tier_' + d.closest('.zip-detail-toggle').dataset.zip + '_' : 'tier_';
-        var k = prefix + d.dataset.tier;
-        if (state[k]) d.setAttribute('open', '');
-        d.addEventListener('toggle', function() { state[k] = d.open; });
-    });
-    document.querySelectorAll('.zip-detail-toggle[data-zip]').forEach(function(d) {
-        var k = 'zip_' + d.dataset.zip;
-        if (state[k]) d.setAttribute('open', '');
-        d.addEventListener('toggle', function() { state[k] = d.open; });
-    });
-})();
-</script>"""
-
-    return f"{score_box}<ul class=\"market-zip-list\">{items}</ul>{persist_js}"
-
-
-def _row(label: str, value: str, color: str = "#1a1a1a") -> str:
+    # Inline <script> was removed: dcc.Markdown often strips or breaks on script tags,
+    # which left the Market tab blank after ZIP selection.
+    n_sel = len(selected) if selected else 0
+    max_note = (
+        f'<div class="market-selection-max-zips-note">'
+        f"The maximum selection is {MAX_SELECTED} ZIP codes. "
+        f'<span class="market-selection-zip-count">({n_sel}/{MAX_SELECTED})</span>'
+        f"</div>"
+    )
     return (
-        f'<tr><td style="color:#1a1a1a;padding:3px 8px 3px 0;font-size:0.7rem;'
+        f"{score_box}"
+        f'<div class="market-zip-list-section">{max_note}<ul class="market-zip-list">{items}</ul></div>'
+    )
+
+
+def _row(label: str, value: str, *, value_color: str | None = "#ffffff") -> str:
+    vc = f"color:{value_color};" if value_color else ""
+    return (
+        f'<tr><td style="color:#e8e8e8;padding:3px 8px 3px 0;font-size:0.7rem;'
         f'width:66%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{label}</td>'
-        f'<td style="text-align:right;font-weight:600;color:{color};padding:3px 0;'
+        f'<td style="text-align:right;font-weight:600;{vc}padding:3px 0;'
         f'font-size:0.7rem;width:34%;white-space:nowrap;">{value}</td></tr>'
     )

@@ -46,7 +46,7 @@ _STATE_MAP = {
 
 
 def prepare_tier1_for_merge(tier1: pd.DataFrame) -> pd.DataFrame:
-    """Align Tier 1 parquet (snake_case) — mirrors frontend loader."""
+    """Align Tier 1 parquet (snake_case) — same rules as `frontend.modules.data.loader`."""
     t = normalize_tier1_columns(tier1)
     if "zip_code" not in t.columns:
         if "zipcode" in t.columns:
@@ -77,7 +77,7 @@ def prepare_tier1_for_merge(tier1: pd.DataFrame) -> pd.DataFrame:
 
 
 def merge_tier1_onto_gdf(gdf: pd.DataFrame, tier1: pd.DataFrame) -> pd.DataFrame:
-    """Left-merge Tier 1 onto polygon attributes (same rules as frontend loader)."""
+    """Left-merge Tier 1 onto polygon attributes (same rules as the Dash app loader)."""
     t = prepare_tier1_for_merge(tier1)
     out = gdf.copy()
     out["zipcode"] = out["zipcode"].map(_norm_zip5)

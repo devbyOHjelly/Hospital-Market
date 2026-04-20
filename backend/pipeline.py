@@ -1,3 +1,5 @@
+"""Build `zcta_hospital_potential.gpkg` for the Hospital Market Dash app (`frontend.dash_app`)."""
+
 from __future__ import annotations
 from pathlib import Path
 from backend.map.build_base_map import ABBR_TO_NAME, build, _load_cfg
