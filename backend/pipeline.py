@@ -1,15 +1,17 @@
 """Build `zcta_hospital_potential.gpkg` for the Hospital Market Dash app (`frontend.dash_app`)."""
 
 from __future__ import annotations
-from pathlib import Path
-from backend.map.build_base_map import ABBR_TO_NAME, build, _load_cfg
+
 import argparse
 import sys
 import time
+from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+
+from backend.map.build_base_map import ABBR_TO_NAME, build, _load_cfg
 
 def run_pipeline(states: list[str] | None = None) -> dict:
     t0 = time.time()
